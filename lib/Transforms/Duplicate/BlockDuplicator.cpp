@@ -27,21 +27,21 @@ using namespace llvm;
 
 #define DEBUG_TYPE "simulator"
 
-STATISTIC(ModuleCounter, "Counts number of modules entered");
+STATISTIC(FunctionCounter, "Counts number of functions entered");
 // STATISTIC(SimulationCounter, "Counts number of possible simulation points");
 
 namespace {
   //===--------------------------------------------------------------------===//
   // DBDuplicationSimulation pass implementation
   //
-  struct DBDuplicationSimulation : public ModulePass {
+  struct DBDuplicationSimulation : public FunctionPass {
     static char ID; // Pass identification, replacement for typeid
-    DBDuplicationSimulation() : ModulePass(ID) {}
+    DBDuplicationSimulation() : FunctionPass(ID) {}
 
-    bool runOnModule(Module &M) override {
-      ++ModuleCounter;
+    bool runOnFunction(Function &F) override {
+      ++FunctionCounter;
       errs() << "simulator: ";
-      errs().write_escaped(M.getName()) << '\n';
+      errs().write_escaped(F.getName()) << '\n';
 
       return false;
     }
