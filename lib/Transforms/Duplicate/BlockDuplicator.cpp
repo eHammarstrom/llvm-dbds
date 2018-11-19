@@ -23,6 +23,7 @@
 #include "llvm/IR/Module.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/IR/Dominators.h"
 using namespace llvm;
 
 #define DEBUG_TYPE "simulator"
@@ -31,21 +32,47 @@ STATISTIC(FunctionCounter, "Counts number of functions entered");
 // STATISTIC(SimulationCounter, "Counts number of possible simulation points");
 
 namespace {
-  //===--------------------------------------------------------------------===//
-  // DBDuplicationSimulation pass implementation
-  //
-  struct DBDuplicationSimulation : public FunctionPass {
-    static char ID; // Pass identification, replacement for typeid
-    DBDuplicationSimulation() : FunctionPass(ID) {}
+//===--------------------------------------------------------------------===//
+// DBDuplicationSimulation pass implementation
+//
+struct DBDuplicationSimulation : public FunctionPass {
+  static char ID; // Pass identification, replacement for typeid
+  DBDuplicationSimulation() : FunctionPass(ID) {}
 
-    bool runOnFunction(Function &F) override {
-      ++FunctionCounter;
-      errs() << "simulator: ";
-      errs().write_escaped(F.getName()) << '\n';
+  bool runOnFunction(Function &F) {
+    ++FunctionCounter;
 
-      return false;
-    }
-  };
+    DominatorTree &DT = getAnalysis<DominatorTree>(F);
+
+    errs() << "simulator: ";
+    errs().write_escaped(F.getName()) << '\n';
+
+    return false;
+  }
+
+  void getAnalysisUsage(AnalysisUsage &AU) const {
+    // FunctionPass::getAnalysisUsage(AU);
+    // required - need before our pass
+    /*
+      AU.addRequiredID(LoopSimplifyID);
+      AU.addRequiredID(LCSSAID);
+    */
+    // AU.addRequired<DominatorTree>();
+    AU.addRequiredID();
+    /*
+      AU.addRequired<LoopInfo>();
+      AU.addRequired<DependenceAnalysis>();
+      AU.addRequired<ScalarEvolution>();
+      AU.addRequired<TargetTransformInfo>();
+    */
+
+    // preserved - not invalidated
+    /*
+      AU.addPreserved<DominatorTree>();
+      AU.addPreserved<DependenceAnalysis>();
+    */
+  }
+};
 }
 
 char DBDuplicationSimulation::ID = 0;
