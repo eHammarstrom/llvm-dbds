@@ -42,7 +42,7 @@ struct DBDuplicationSimulation : public FunctionPass {
   bool runOnFunction(Function &F) {
     ++FunctionCounter;
 
-    DominatorTree &DT = getAnalysis<DominatorTree>(F);
+    DominatorTree &DT = getAnalysis<DominatorTreeWrapperPass>(F).getDomTree();
 
     errs() << "simulator: ";
     errs().write_escaped(F.getName()) << '\n';
@@ -51,14 +51,14 @@ struct DBDuplicationSimulation : public FunctionPass {
   }
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
-    // FunctionPass::getAnalysisUsage(AU);
+    FunctionPass::getAnalysisUsage(AU);
+    AU.addRequired<DominatorTreeWrapperPass>();
+
     // required - need before our pass
     /*
       AU.addRequiredID(LoopSimplifyID);
       AU.addRequiredID(LCSSAID);
     */
-    // AU.addRequired<DominatorTree>();
-    AU.addRequiredID();
     /*
       AU.addRequired<LoopInfo>();
       AU.addRequired<DependenceAnalysis>();
