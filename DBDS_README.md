@@ -2,6 +2,12 @@
 
 ## IMPORTANT NOTES
 
+### Preparing tests
+
+Do not forget to remove the `optnone` attribute in the .ll produced by `clang`. This will make opt skip its opts.
+
+Beware that there is also an attribute `noinline` which one may want to remove at a later stage. Post DBDS implementation.
+
 ### Runtime errors
 
 If you use analysis in runOnModule, `getAnalysis<AnalysisType>(Function)`
