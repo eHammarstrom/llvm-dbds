@@ -17,10 +17,13 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <vector>
+
 #include "llvm/ADT/Statistic.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/BasicBlock.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/IR/Dominators.h"
@@ -35,17 +38,42 @@ namespace {
 //===--------------------------------------------------------------------===//
 // DBDuplicationSimulation pass implementation
 //
+
+using namespace std;
+
 struct DBDuplicationSimulation : public FunctionPass {
   static char ID; // Pass identification, replacement for typeid
   DBDuplicationSimulation() : FunctionPass(ID) {}
 
   bool runOnFunction(Function &F) {
+    vector<DomTreeNodeBase<BasicBlock>*> WorkList;
+    DomTreeNodeBase<BasicBlock> *Node;
+    BasicBlock *BB;
+
+    errs() << "simulator: "; errs().write_escaped(F.getName()) << '\n';
     ++FunctionCounter;
 
-    DominatorTree &DT = getAnalysis<DominatorTreeWrapperPass>(F).getDomTree();
+    // domtree<node<basicblock>>> of function F
+    DominatorTree &DT = getAnalysis<DominatorTreeWrapperPass>().getDomTree();
 
-    errs() << "simulator: ";
-    errs().write_escaped(F.getName()) << '\n';
+    WorkList.push_back(DT.getRootNode());
+
+    // a DFS of the domtree(function F)
+    do {
+      // pop DFS child off worklist
+      Node = WorkList.back();
+      WorkList.pop_back();
+
+      BB = Node->getBlock();
+      errs().write_escaped(BB->getName()) << '\n';
+
+      // TODO: perform algorithm
+
+      // add children of node to worklist
+      for (auto &Child : Node->getChildren()) {
+        WorkList.push_back(Child);
+      }
+    } while (!WorkList.empty());
 
     return false;
   }
