@@ -27,6 +27,7 @@
 #include "llvm/Pass.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/IR/Dominators.h"
+#include "llvm/IR/CFG.h"
 using namespace llvm;
 
 #define DEBUG_TYPE "simulator"
@@ -56,6 +57,8 @@ struct DBDuplicationSimulation : public FunctionPass {
     // domtree<node<basicblock>>> of function F
     DominatorTree &DT = getAnalysis<DominatorTreeWrapperPass>().getDomTree();
 
+    DT.print(errs());
+
     WorkList.push_back(DT.getRootNode());
 
     // a DFS of the domtree(function F)
@@ -68,6 +71,16 @@ struct DBDuplicationSimulation : public FunctionPass {
       errs().write_escaped(BB->getName()) << '\n';
 
       // TODO: perform algorithm
+
+      // check if basicblock is a mergepoint for each pred
+      for (auto Predecessor : predecessors(BB)) {
+        if (!DT.dominates(Predecessor, BB)) {
+
+          // benefit, cost = simulateMerge(Predecessor, BB)
+
+          errs() << '\t' << "is a merge point with " << Predecessor->getName() << '\n';
+        }
+      }
 
       // add children of node to worklist
       for (auto &Child : Node->getChildren()) {
