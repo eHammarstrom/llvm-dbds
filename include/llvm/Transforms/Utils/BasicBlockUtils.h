@@ -287,6 +287,9 @@ void SplitBlockAndInsertIfThenElse(Value *Cond, Instruction *SplitBefore,
 Value *GetIfCondition(BasicBlock *BB, BasicBlock *&IfTrue,
                       BasicBlock *&IfFalse);
 
+/// Check whether BB is the merge point of a if-region.
+bool BlockIsIfMergePoint(BasicBlock *BB);
+
 // Split critical edges where the source of the edge is an indirectbr
 // instruction. This isn't always possible, but we can handle some easy cases.
 // This is useful because MI is unable to split such critical edges,

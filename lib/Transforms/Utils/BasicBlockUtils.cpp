@@ -835,3 +835,23 @@ Value *llvm::GetIfCondition(BasicBlock *BB, BasicBlock *&IfTrue,
   }
   return BI->getCondition();
 }
+
+bool llvm::BlockIsIfMergePoint(BasicBlock *BB) {
+  PHINode *SomePHI = dyn_cast<PHINode>(BB->begin());
+
+  if (SomePHI) {
+    if (SomePHI->getNumIncomingValues() != 2) // Two predecessors
+      return false;
+  } else {
+    pred_iterator PI = pred_begin(BB), PE = pred_end(BB);
+    if (PI == PE) // No predecessor
+      return false;
+
+    std::advance(PI, 2);
+
+    if (PI != PE) // More than two predecessors
+      return false;
+  }
+
+  return true; // Two predecessors
+}

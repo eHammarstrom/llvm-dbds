@@ -20,14 +20,19 @@
 #include <vector>
 
 #include "llvm/ADT/Statistic.h"
+#include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/Casting.h"
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
+#include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instruction.h"
+#include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/BasicBlock.h"
-#include "llvm/Pass.h"
-#include "llvm/Support/raw_ostream.h"
 #include "llvm/IR/Dominators.h"
+#include "llvm/IR/Type.h"
 #include "llvm/IR/CFG.h"
+#include "llvm/Pass.h"
 using namespace llvm;
 
 #define DEBUG_TYPE "simulator"
@@ -61,9 +66,9 @@ struct DBDuplicationSimulation : public FunctionPass {
 
     WorkList.push_back(DT.getRootNode());
 
-    // a DFS of the domtree(function F)
+    // A DFS of the domtree(function F)
     do {
-      // pop DFS child off worklist
+      // Pop DFS child off worklist
       Node = WorkList.back();
       WorkList.pop_back();
 
@@ -72,13 +77,14 @@ struct DBDuplicationSimulation : public FunctionPass {
 
       // TODO: perform algorithm
 
-      // check if basicblock is a mergepoint for each pred
-      for (auto Predecessor : predecessors(BB)) {
-        if (!DT.dominates(Predecessor, BB)) {
+      for (BasicBlock *BBSuccessor : successors(BB)) {
+        if (BlockIsIfMergePoint(BBSuccessor)) {
+          // BB          = b_pi  in paper [0]
+          // BBSuccessor = b_m   in paper [0]
 
-          // benefit, cost = simulateMerge(Predecessor, BB)
+          // benefit, cost = simulateMerge(BB, BBSuccessor)
 
-          errs() << '\t' << "is a merge point with " << Predecessor->getName() << '\n';
+          errs() << '\t' << "has successor merge point " << BBSuccessor->getName() << '\n';
         }
       }
 
