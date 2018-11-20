@@ -846,9 +846,10 @@ bool llvm::BlockIsIfMergePoint(BasicBlock *BB) {
     pred_iterator PI = pred_begin(BB), PE = pred_end(BB);
     if (PI == PE) // No predecessor
       return false;
-
-    std::advance(PI, 2);
-
+    *PI++;
+    if (PI == PE) // Only one predecessor
+      return false;
+    *PI++;
     if (PI != PE) // More than two predecessors
       return false;
   }
