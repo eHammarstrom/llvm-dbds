@@ -51,57 +51,14 @@ struct DBDuplicationSimulation : public FunctionPass {
   static char ID; // Pass identification, replacement for typeid
   DBDuplicationSimulation() : FunctionPass(ID) {}
 
-  bool runOnFunction(Function &F) {
-    vector<DomTreeNodeBase<BasicBlock>*> WorkList;
-    DomTreeNodeBase<BasicBlock> *Node;
-    BasicBlock *BB;
+  bool runOnFunction(Function &F) override;
 
-    errs() << "simulator: "; errs().write_escaped(F.getName()) << '\n';
-    ++FunctionCounter;
-
-    // domtree<node<basicblock>>> of function F
-    DominatorTree &DT = getAnalysis<DominatorTreeWrapperPass>().getDomTree();
-
-    DT.print(errs());
-
-    WorkList.push_back(DT.getRootNode());
-
-    // A DFS of the domtree(function F)
-    do {
-      // Pop DFS child off worklist
-      Node = WorkList.back();
-      WorkList.pop_back();
-
-      BB = Node->getBlock();
-      errs().write_escaped(BB->getName()) << '\n';
-
-      // TODO: perform algorithm
-
-      for (BasicBlock *BBSuccessor : successors(BB)) {
-        if (BlockIsIfMergePoint(BBSuccessor)) {
-          // BB          = b_pi  in paper [0]
-          // BBSuccessor = b_m   in paper [0]
-
-          // benefit, cost = simulateMerge(BB, BBSuccessor)
-
-          errs() << '\t' << "has successor merge point " << BBSuccessor->getName() << '\n';
-        }
-      }
-
-      // add children of node to worklist
-      for (auto &Child : Node->getChildren()) {
-        WorkList.push_back(Child);
-      }
-    } while (!WorkList.empty());
-
-    return false;
-  }
-
-  void getAnalysisUsage(AnalysisUsage &AU) const {
+  void getAnalysisUsage(AnalysisUsage &AU) const override {
     FunctionPass::getAnalysisUsage(AU);
-    AU.addRequired<DominatorTreeWrapperPass>();
 
     // required - need before our pass
+    AU.addRequired<DominatorTreeWrapperPass>();
+
     /*
       AU.addRequiredID(LoopSimplifyID);
       AU.addRequiredID(LCSSAID);
@@ -124,3 +81,55 @@ struct DBDuplicationSimulation : public FunctionPass {
 
 char DBDuplicationSimulation::ID = 0;
 static RegisterPass<DBDuplicationSimulation> X("simulator", "Duplication Simulator Pass");
+
+bool DBDuplicationSimulation::runOnFunction(Function &F) {
+  if (skipFunction(F))
+    return false;
+
+  errs() << "simulator: "; errs().write_escaped(F.getName()) << '\n';
+  ++FunctionCounter;
+
+  // domtree<node<basicblock>>> of function F
+  DominatorTree &DT = getAnalysis<DominatorTreeWrapperPass>().getDomTree();
+
+  DT.print(errs());
+
+  vector<DomTreeNodeBase<BasicBlock>*> WorkList;
+  WorkList.push_back(DT.getRootNode());
+
+  // A DFS of the domtree(function F)
+  do {
+    // Pop DFS child off worklist
+    DomTreeNodeBase<BasicBlock> *Node = WorkList.back();
+    WorkList.pop_back();
+
+    BasicBlock *BB = Node->getBlock();
+    errs().write_escaped(BB->getName()) << '\n';
+
+    // TODO: perform algorithm
+
+    for (BasicBlock *BBSuccessor : successors(BB)) {
+      if (BlockIsIfMergePoint(BBSuccessor)) {
+        // BB          = b_pi  in paper [0]
+        // BBSuccessor = b_m   in paper [0]
+
+        // benefit, cost = simulateMerge(BB, BBSuccessor)
+
+        errs() << '\t' << "has successor merge point " << BBSuccessor->getName() << '\n';
+      }
+    }
+
+    // add children of node to worklist
+    for (auto &Child : Node->getChildren()) {
+      WorkList.push_back(Child);
+    }
+  } while (!WorkList.empty());
+
+  bool Changed = false;
+
+  /*
+   * Choose simulations to apply
+   */
+
+  return Changed;
+}
