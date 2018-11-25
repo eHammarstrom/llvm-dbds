@@ -1,4 +1,4 @@
-//===- Hello.cpp - Example code from "Writing an LLVM Pass" ---------------===//
+//===- BlockDuplicator.cpp - Block duplication pass ------------*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -8,6 +8,12 @@
 //===----------------------------------------------------------------------===//
 //
 // This file implements dominance-based duplication simulation.
+//
+//
+// Some notation used:
+// bp = a Basic Block Predecessor of bm
+// bm = a Merge Basic Block, successor of bp
+//
 //
 // See the paper(s):
 //
@@ -23,6 +29,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
+#include "llvm/Transforms/Duplicate/BlockDuplicator.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instruction.h"
@@ -33,6 +40,7 @@
 #include "llvm/IR/Type.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/Pass.h"
+
 using namespace llvm;
 
 #define DEBUG_TYPE "simulator"

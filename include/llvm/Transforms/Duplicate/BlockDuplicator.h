@@ -1,0 +1,90 @@
+//===- BlockDuplicator.h - Block duplication pass ---------------*- C++ -*-===//
+//
+//                     The LLVM Compiler Infrastructure
+//
+// This file is distributed under the University of Illinois Open Source
+// License. See LICENSE.TXT for details.
+//
+//===----------------------------------------------------------------------===//
+//
+//
+// This file implements dominance-based duplication simulation.
+//
+//
+// See the paper(s):
+//
+// "Dominance-Based Duplication Simulation (DBDS)", by D. Leopoldseder,
+// L. Stadler, T. Würthinger, J. Eisl, D. Simon, H. Mössenböck
+//
+//
+//===----------------------------------------------------------------------===//
+
+
+#ifndef LLVM_TRANSFORMS_DUPLICATE_BLOCKDUPLICATOR_H
+#define LLVM_TRANSFORMS_DUPLICATE_BLOCKDUPLICATOR_H
+
+namespace llvm {
+namespace blockduplicator {
+
+using namespace std;
+
+// Left Value is a PHI-instr
+// Right Value is PHI.getOperand(bp) where bp is the predecessor of bm
+typedef map<Value*, Value*> SymbolMap;
+
+enum SimulationActionType {
+                           Add, // Action adds instruction
+                           Remove, // Action removes instruction(s)
+                           Replace, // Action replaces instruction(s)
+};
+
+class SimulationAction {
+public:
+  // Calculates the benefit of an action taken
+  int approximateBenefit();
+private:
+  // Type of action
+  SimulationActionType type;
+  // Instruction to be added by action
+  Instruction* addInstr;
+  // Instructions to be removed by action
+  vector<Instruction*> removeInstrs;
+};
+
+// Interface to be implemented by an optimization
+class ApplicabilityCheck {
+public:
+  // Returns the actions that should be taken to apply an optimization
+  virtual vector<SimulationAction*> simulate(SymbolMap, vector<Instruction*>);
+};
+
+// MemCpyOptimizer-like optimizations
+class MemCpyApplicabilityCheck : ApplicabilityCheck {};
+
+class Simulation {
+public:
+  Simulation(BasicBlock* bp, BasicBlock* bm);
+  // Performs duplication, returning the merged BasicBlock with the new instructions.
+  // This will replace bp in the CFG.
+  BasicBlock* apply();
+private:
+  // Predecessor basic block
+  BasicBlock* bp;
+  // Successor merge basic block
+  BasicBlock* bm;
+  // Benefit of duplication simulation
+  int benefit;
+  // Cost of duplication simulation
+  int cost;
+  // Maps a merge basic block phi-function to the value
+  // defined in the predecessor block bm.
+  SymbolMap unrolledPHIVariables;
+  // The actions to be taken to transform the duplication block
+  // into its optimized equivalent.
+  vector<SimulationAction*> res;
+};
+
+}
+}
+
+#endif
