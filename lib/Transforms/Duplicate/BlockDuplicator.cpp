@@ -146,14 +146,14 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
   return Changed;
 }
 
-void appendInstructions(vector<Instruction *> &instr, BasicBlock *bb) {
-  for (auto ii = bb->begin(); ii != bb.end(); ++ii) {
-    Instruction *I = cast<Instruction>(ii);
+void appendInstructions(vector<Instruction *> &Instructions, BasicBlock *BB) {
+  for (auto II = BB->begin(); II != BB->end(); ++II) {
+    Instruction *I = cast<Instruction>(II);
 
     if (isa<PHINode>(I) || isa<BranchInst>(I))
       continue;
 
-    instr.push_back(I);
+    Instructions.push_back(I);
   }
 }
 
@@ -179,7 +179,9 @@ void Simulation::run() {
   }
 }
 
-BasicBlock *Simulation::apply() {}
+BasicBlock *Simulation::apply() {
+  return NULL;
+}
 
 int MemCpyApplicabilityCheck::simulate(SymbolMap Map,
                                        vector<Instruction *> Instrs) {
