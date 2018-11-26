@@ -92,8 +92,8 @@ private:
   // Maps a merge basic block phi-function to the value
   // defined in the predecessor block bm.
   SymbolMap PHITranslation;
-	// Vector over the instructions in the simulation
-	vector<Instruction*> Instructions;
+  // Vector over the instructions in the simulation
+  vector<Instruction*> Instructions;
   // The actions to be taken to transform the duplication block
   // into its optimized equivalent.
   vector<SimulationAction*> Res;
