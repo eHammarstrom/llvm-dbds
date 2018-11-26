@@ -108,6 +108,9 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
   vector<DomTreeNodeBase<BasicBlock> *> WorkList;
   WorkList.push_back(DT.getRootNode());
 
+  // Merge simulations performed on the DT
+  vector<Simulation*> Simulations;
+
   // A DFS of the domtree(function F)
   do {
     // Pop DFS child off worklist
@@ -124,10 +127,16 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
         // BB          = b_pi  in paper [0]
         // BBSuccessor = b_m   in paper [0]
 
-        // benefit, cost = simulateMerge(BB, BBSuccessor)
-
         errs() << '\t' << "has successor merge point " << BBSuccessor->getName()
                << '\n';
+        errs() << '\t' << "running simulation\n";
+
+        // Simulate duplication
+        Simulation *S = new Simulation(BB, BBSuccessor);
+        S->run();
+
+        // Collect all simulations
+        Simulations.push_back(S);
       }
     }
 
@@ -139,9 +148,9 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
 
   bool Changed = false;
 
-  /*
-   * Choose simulations to apply
-   */
+  // Sort simulations by benefit/cost
+
+  // Apply simulations if passing benefit/cost threshold
 
   return Changed;
 }
