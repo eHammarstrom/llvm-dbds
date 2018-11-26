@@ -44,6 +44,10 @@ public:
   // Calculates the benefit of an action taken
   int approximateBenefit();
 private:
+  // Benefit of duplication simulation
+  int Benefit;
+  // Cost of duplication simulation
+  int Cost;
   // Type of action
   SimulationActionType type;
   // Instruction to be added by action
@@ -75,23 +79,21 @@ class Simulation {
 public:
   Simulation(BasicBlock* BP, BasicBlock* BM);
   ~Simulation();
-  int run();
+  void run();
   // Performs duplication, returning the merged BasicBlock with the new instructions.
   // This will replace bp in the CFG.
   BasicBlock* apply();
 private:
-  vector<ApplicabilityCheck*> AC;
+  vector<ApplicabilityCheck*> AC = {new MemCpyApplicabilityCheck()};
   // Predecessor basic block
   BasicBlock* BP;
   // Successor merge basic block
   BasicBlock* BM;
-  // Benefit of duplication simulation
-  int Benefit;
-  // Cost of duplication simulation
-  int Cost;
   // Maps a merge basic block phi-function to the value
   // defined in the predecessor block bm.
   SymbolMap PHITranslation;
+	// Vector over the instructions in the simulation
+	vector<Instruction*> Instructions;
   // The actions to be taken to transform the duplication block
   // into its optimized equivalent.
   vector<SimulationAction*> Res;

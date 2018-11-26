@@ -143,14 +143,20 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
   return Changed;
 }
 
+void appendInstructions(vector<Instruction*> &instr, BasicBlock *bb) {
+	for (auto i = bb->begin(); i != bb.end(); ++i) {
+		Instruction *I = cast<Instruction>(i);
+
+		if (isa<PHINode>(I) || isa<BranchInst>(I))
+			continue;
+
+		instr.push_back(I);
+	}
+}
+
 Simulation::Simulation(BasicBlock* bp,
                        BasicBlock* bm)
     : BP(bp), BM(bm) {
-
-  AC.push_back(new MemCpyApplicabilityCheck());
-
-  Benefit = 0;
-  Cost = 0;
 
   for (BasicBlock::iterator I = BM->begin(); isa<PHINode>(I); ++I) {
     PHINode *PN = cast<PHINode>(I);
@@ -162,11 +168,18 @@ Simulation::Simulation(BasicBlock* bp,
     PHITranslation.insert(
         pair<Value*, Value*>(PN, PredValue));
   }
+
+	appendInstructions(Instructions, BP);
+	appendInstructions(Instructions, BM);
+
+	}
+
+void Simulation::run() {
+	for (auto& check: AC) {
+		check->simulate(PHITranslation, Instructions);
+	}
 }
 
-
-int Simulation::run() {
-}
 
 BasicBlock* Simulation::apply() {
 }
