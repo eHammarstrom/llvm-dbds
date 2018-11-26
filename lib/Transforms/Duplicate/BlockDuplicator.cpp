@@ -26,20 +26,20 @@
 #include <vector>
 
 #include "llvm/ADT/Statistic.h"
-#include "llvm/Support/raw_ostream.h"
-#include "llvm/Support/Casting.h"
-#include "llvm/Transforms/Utils/BasicBlockUtils.h"
-#include "llvm/Transforms/Duplicate/BlockDuplicator.h"
-#include "llvm/IR/InstrTypes.h"
+#include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/CFG.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
-#include "llvm/IR/BasicBlock.h"
-#include "llvm/IR/Dominators.h"
 #include "llvm/IR/Type.h"
-#include "llvm/IR/CFG.h"
 #include "llvm/Pass.h"
+#include "llvm/Support/Casting.h"
+#include "llvm/Support/raw_ostream.h"
+#include "llvm/Transforms/Duplicate/BlockDuplicator.h"
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
 
 using namespace llvm;
 using namespace llvm::blockduplicator;
@@ -86,16 +86,18 @@ struct DBDuplicationSimulation : public FunctionPass {
     */
   }
 };
-}
+} // namespace
 
 char DBDuplicationSimulation::ID = 0;
-static RegisterPass<DBDuplicationSimulation> X("simulator", "Duplication Simulator Pass");
+static RegisterPass<DBDuplicationSimulation> X("simulator",
+                                               "Duplication Simulator Pass");
 
 bool DBDuplicationSimulation::runOnFunction(Function &F) {
   if (skipFunction(F))
     return false;
 
-  errs() << "simulator: "; errs().write_escaped(F.getName()) << '\n';
+  errs() << "simulator: ";
+  errs().write_escaped(F.getName()) << '\n';
   ++FunctionCounter;
 
   // domtree<node<basicblock>>> of function F
@@ -103,7 +105,7 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
 
   DT.print(errs());
 
-  vector<DomTreeNodeBase<BasicBlock>*> WorkList;
+  vector<DomTreeNodeBase<BasicBlock> *> WorkList;
   WorkList.push_back(DT.getRootNode());
 
   // A DFS of the domtree(function F)
@@ -124,7 +126,8 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
 
         // benefit, cost = simulateMerge(BB, BBSuccessor)
 
-        errs() << '\t' << "has successor merge point " << BBSuccessor->getName() << '\n';
+        errs() << '\t' << "has successor merge point " << BBSuccessor->getName()
+               << '\n';
       }
     }
 
@@ -143,20 +146,18 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
   return Changed;
 }
 
-void appendInstructions(vector<Instruction*> &instr, BasicBlock *bb) {
-	for (auto i = bb->begin(); i != bb.end(); ++i) {
-		Instruction *I = cast<Instruction>(i);
+void appendInstructions(vector<Instruction *> &instr, BasicBlock *bb) {
+  for (auto ii = bb->begin(); ii != bb.end(); ++ii) {
+    Instruction *I = cast<Instruction>(ii);
 
-		if (isa<PHINode>(I) || isa<BranchInst>(I))
-			continue;
+    if (isa<PHINode>(I) || isa<BranchInst>(I))
+      continue;
 
-		instr.push_back(I);
-	}
+    instr.push_back(I);
+  }
 }
 
-Simulation::Simulation(BasicBlock* bp,
-                       BasicBlock* bm)
-    : BP(bp), BM(bm) {
+Simulation::Simulation(BasicBlock *bp, BasicBlock *bm) : BP(bp), BM(bm) {
 
   for (BasicBlock::iterator I = BM->begin(); isa<PHINode>(I); ++I) {
     PHINode *PN = cast<PHINode>(I);
@@ -165,29 +166,24 @@ Simulation::Simulation(BasicBlock* bp,
 
     Value *PredValue = PN->getIncomingValue(BPIndex);
 
-    PHITranslation.insert(
-        pair<Value*, Value*>(PN, PredValue));
+    PHITranslation.insert(pair<Value *, Value *>(PN, PredValue));
   }
 
-	appendInstructions(Instructions, BP);
-	appendInstructions(Instructions, BM);
-
-	}
+  appendInstructions(Instructions, BP);
+  appendInstructions(Instructions, BM);
+}
 
 void Simulation::run() {
-	for (auto& check: AC) {
-		check->simulate(PHITranslation, Instructions);
-	}
+  for (auto &check : AC) {
+    check->simulate(PHITranslation, Instructions);
+  }
 }
 
-
-BasicBlock* Simulation::apply() {
-}
-
+BasicBlock *Simulation::apply() {}
 
 int MemCpyApplicabilityCheck::simulate(SymbolMap Map,
-                                   vector<Instruction*> Instrs) {
-  vector<SimulationAction*> Actions;
+                                       vector<Instruction *> Instrs) {
+  vector<SimulationAction *> Actions;
 
   return 0;
 }
