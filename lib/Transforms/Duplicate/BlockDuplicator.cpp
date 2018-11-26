@@ -42,6 +42,7 @@
 #include "llvm/Pass.h"
 
 using namespace llvm;
+using namespace llvm::blockduplicator;
 
 #define DEBUG_TYPE "simulator"
 
@@ -141,3 +142,41 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
 
   return Changed;
 }
+
+Simulation::Simulation(BasicBlock* bp,
+                       BasicBlock* bm)
+    : BP(bp), BM(bm) {
+
+  AC.push_back(new MemCpyApplicabilityCheck());
+
+  Benefit = 0;
+  Cost = 0;
+
+  for (BasicBlock::iterator I = BM->begin(); isa<PHINode>(I); ++I) {
+    PHINode *PN = cast<PHINode>(I);
+
+    const int BPIndex = PN->getBasicBlockIndex(BP);
+
+    Value *PredValue = PN->getIncomingValue(BPIndex);
+
+    PHITranslation.insert(
+        pair<Value*, Value*>(PN, PredValue));
+  }
+}
+
+
+int Simulation::run() {
+}
+
+BasicBlock* Simulation::apply() {
+}
+
+
+int MemCpyApplicabilityCheck::simulate(SymbolMap Map,
+                                   vector<Instruction*> Instrs) {
+  vector<SimulationAction*> Actions;
+
+  return 0;
+}
+
+MemCpyApplicabilityCheck::~MemCpyApplicabilityCheck() {}

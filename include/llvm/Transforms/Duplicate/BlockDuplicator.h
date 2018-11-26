@@ -1,4 +1,5 @@
 //===- BlockDuplicator.h - Block duplication pass ---------------*- C++ -*-===//
+
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -54,34 +55,46 @@ private:
 // Interface to be implemented by an optimization
 class ApplicabilityCheck {
 public:
+  ApplicabilityCheck() {}
+  virtual ~ApplicabilityCheck() = 0;
   // Returns the actions that should be taken to apply an optimization
-  virtual vector<SimulationAction*> simulate(SymbolMap, vector<Instruction*>);
+  virtual int simulate(SymbolMap, vector<Instruction*>) = 0;
+private:
+  vector<SimulationAction*> Actions;
 };
 
 // MemCpyOptimizer-like optimizations
-class MemCpyApplicabilityCheck : ApplicabilityCheck {};
+class MemCpyApplicabilityCheck : public ApplicabilityCheck {
+public:
+  MemCpyApplicabilityCheck() {}
+  ~MemCpyApplicabilityCheck();
+  int simulate(SymbolMap, vector<Instruction*>);
+};
 
 class Simulation {
 public:
-  Simulation(BasicBlock* bp, BasicBlock* bm);
+  Simulation(BasicBlock* BP, BasicBlock* BM);
+  ~Simulation();
+  int run();
   // Performs duplication, returning the merged BasicBlock with the new instructions.
   // This will replace bp in the CFG.
   BasicBlock* apply();
 private:
+  vector<ApplicabilityCheck*> AC;
   // Predecessor basic block
-  BasicBlock* bp;
+  BasicBlock* BP;
   // Successor merge basic block
-  BasicBlock* bm;
+  BasicBlock* BM;
   // Benefit of duplication simulation
-  int benefit;
+  int Benefit;
   // Cost of duplication simulation
-  int cost;
+  int Cost;
   // Maps a merge basic block phi-function to the value
   // defined in the predecessor block bm.
-  SymbolMap unrolledPHIVariables;
+  SymbolMap PHITranslation;
   // The actions to be taken to transform the duplication block
   // into its optimized equivalent.
-  vector<SimulationAction*> res;
+  vector<SimulationAction*> Res;
 };
 
 }
