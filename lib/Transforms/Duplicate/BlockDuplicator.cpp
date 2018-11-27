@@ -110,7 +110,7 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
   WorkList.push_back(DT.getRootNode());
 
   // Merge simulations performed on the DT
-  vector<Simulation*> Simulations;
+  vector<Simulation *> Simulations;
 
   // A DFS of the domtree(function F)
   do {
@@ -151,13 +151,14 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
 
   // Sort simulations by benefit/cost
   sort(Simulations.begin(), Simulations.end(),
-       [] ( Simulation* S1, Simulation* S2 )
-       { return S1->simulationBenefit() > S2->simulationBenefit(); });
+       [](Simulation *S1, Simulation *S2) {
+         return S1->simulationBenefit() > S2->simulationBenefit();
+       });
 
   const int BenefitThreshold = 10;
 
   // Apply simulations if passing benefit/cost threshold
-  for (Simulation* S : Simulations) {
+  for (Simulation *S : Simulations) {
     if (S->simulationBenefit() > BenefitThreshold) {
       Changed |= S->apply();
     }
@@ -183,20 +184,17 @@ int SimulationAction::getBenefit() {
   return Benefit * BenefitScaleFactor;
 }
 
-int SimulationAction::getCost() {
-  return Cost;
-}
+int SimulationAction::getCost() { return Cost; }
 
-bool SimulationAction::apply(BasicBlock* NewBlock, InstructionMap IMap)
-{
+bool SimulationAction::apply(BasicBlock *NewBlock, InstructionMap IMap) {
   bool Changed = false;
 
   switch (Type) {
   case Add:
     for (auto P : u.AddInstructions) {
       // Translate instruction pointer to duplicated instruction pointer
-      Instruction* Reference = IMap.at(P.first);
-      Instruction* Addition  = P.second;
+      Instruction *Reference = IMap.at(P.first);
+      Instruction *Addition = P.second;
 
       Reference->insertAfter(Addition);
       Changed |= true;
@@ -212,8 +210,8 @@ bool SimulationAction::apply(BasicBlock* NewBlock, InstructionMap IMap)
   case Replace:
     for (auto P : u.ReplaceInstructions) {
       // Translate instruction pointer to duplicated instruction pointer
-      Instruction* Replacee = IMap.at(P.first);
-      Instruction* Replacer = P.second;
+      Instruction *Replacee = IMap.at(P.first);
+      Instruction *Replacer = P.second;
 
       ReplaceInstWithInst(Replacee, Replacer);
       Changed |= true;
@@ -242,18 +240,18 @@ Simulation::Simulation(BasicBlock *bp, BasicBlock *bm) : BP(bp), BM(bm) {
 
 void Simulation::run() {
   for (auto &check : AC) {
-    SimulationAction* action = check->simulate(PHITranslation, Instructions);
+    SimulationAction *action = check->simulate(PHITranslation, Instructions);
     Actions.push_back(action);
   }
 }
 
 int Simulation::simulationBenefit() {
   int Benefit = 0;
-  int Cost    = 0;
+  int Cost = 0;
 
   for (auto A : Actions) {
     Benefit += A->getBenefit();
-    Cost    += A->getCost();
+    Cost += A->getCost();
   }
 
   return Benefit - Cost;
@@ -263,12 +261,30 @@ InstructionMap Simulation::mergeBlocks() {
   InstructionMap IMap;
 
   // Remove branch to BM in BP
+  BP->getInstList().pop_back();
 
   // Add BM DUPLICATED instructions to BP if
   // there exist no SimulationAction for it
   // else use the SimulationAction
   // And for all instructions -- provide a mapping
   // even if it is to itself.
+  for (auto II = BP->begin(); II != BP->end(); ++II) {
+    Instruction *I = cast<Instruction>(II);
+    IMap.insert(pair<Instruction *, Instruction *>(I, I));
+  }
+
+  for (auto II = BM->begin(); II != BM->end(); ++II) {
+    Instruction *I = cast<Instruction>(II);
+    Instruction *ClonedInstruction = I->clone();
+
+    IMap.insert(pair<Instruction *, Instruction *>(I, ClonedInstruction));
+
+    if (isa<PHINode>(I)) {
+      BP->getInstList().insert(BP->begin(), ClonedInstruction);
+    } else {
+      BP->getInstList().insert(BP->end(), ClonedInstruction);
+    }
+  }
 
   return IMap;
 }
@@ -285,8 +301,9 @@ bool Simulation::apply() {
   return Changed;
 }
 
-SimulationAction* MemCpyApplicabilityCheck::simulate(SymbolMap Map,
-                                       vector<Instruction *> Instrs) {
+SimulationAction *
+MemCpyApplicabilityCheck::simulate(SymbolMap Map,
+                                   vector<Instruction *> Instrs) {
   return NULL;
 }
 
