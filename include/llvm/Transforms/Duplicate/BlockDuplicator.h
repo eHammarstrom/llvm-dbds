@@ -32,6 +32,7 @@ using namespace std;
 // Left Value is a PHI-instr
 // Right Value is PHI.getOperand(bp) where bp is the predecessor of bm
 typedef map<Value*, Value*> SymbolMap;
+typedef map<Instruction*, Instruction*> InstructionMap;
 
 enum SimulationActionType {
                            Add, // Action adds instruction
@@ -42,18 +43,25 @@ enum SimulationActionType {
 class SimulationAction {
 public:
   // Calculates the benefit of an action taken
-  int approximateBenefit();
+  int getBenefit();
+  int getCost();
+  bool apply(BasicBlock*, InstructionMap);
 private:
   // Benefit of duplication simulation
   int Benefit;
   // Cost of duplication simulation
   int Cost;
   // Type of action
-  SimulationActionType type;
-  // Instruction to be added by action
-  Instruction* addInstr;
-  // Instructions to be removed by action
-  vector<Instruction*> removeInstrs;
+  SimulationActionType Type;
+
+  union {
+    // Instruction to be added by action, <Reference, Addition>
+    vector<pair<Instruction*, Instruction *>> AddInstructions;
+    // Instructions to be removed by action
+    vector<Instruction *> RemoveInstructions;
+    // Instruction pair to be replaced, <Replacee, Replacer>
+    vector<pair<Instruction *, Instruction *>> ReplaceInstructions;
+  } u;
 };
 
 // Interface to be implemented by an optimization
@@ -62,9 +70,7 @@ public:
   ApplicabilityCheck() {}
   virtual ~ApplicabilityCheck() = 0;
   // Returns the actions that should be taken to apply an optimization
-  virtual int simulate(SymbolMap, vector<Instruction*>) = 0;
-private:
-  vector<SimulationAction*> Actions;
+  virtual SimulationAction* simulate(SymbolMap, vector<Instruction*>) = 0;
 };
 
 // MemCpyOptimizer-like optimizations
@@ -72,7 +78,7 @@ class MemCpyApplicabilityCheck : public ApplicabilityCheck {
 public:
   MemCpyApplicabilityCheck() {}
   ~MemCpyApplicabilityCheck();
-  int simulate(SymbolMap, vector<Instruction*>);
+  SimulationAction* simulate(SymbolMap, vector<Instruction*>);
 };
 
 class Simulation {
@@ -80,10 +86,14 @@ public:
   Simulation(BasicBlock* BP, BasicBlock* BM);
   ~Simulation();
   void run();
+  int simulationBenefit();
   // Performs duplication, returning the merged BasicBlock with the new instructions.
   // This will replace bp in the CFG.
-  BasicBlock* apply();
+  bool apply();
 private:
+  // Duplicate BM, and merge inte BP
+  InstructionMap mergeBlocks();
+  // ApplicabilityChecks
   vector<ApplicabilityCheck*> AC = {new MemCpyApplicabilityCheck()};
   // Predecessor basic block
   BasicBlock* BP;
@@ -96,7 +106,7 @@ private:
   vector<Instruction*> Instructions;
   // The actions to be taken to transform the duplication block
   // into its optimized equivalent.
-  vector<SimulationAction*> Res;
+  vector<SimulationAction*> Actions;
 };
 
 }

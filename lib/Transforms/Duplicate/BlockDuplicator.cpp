@@ -40,6 +40,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Duplicate/BlockDuplicator.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
+#include "llvm/Transforms/Utils/Cloning.h"
 
 using namespace llvm;
 using namespace llvm::blockduplicator;
@@ -149,8 +150,18 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
   bool Changed = false;
 
   // Sort simulations by benefit/cost
+  sort(Simulations.begin(), Simulations.end(),
+       [] ( Simulation* S1, Simulation* S2 )
+       { return S1->simulationBenefit() > S2->simulationBenefit(); });
+
+  const int BenefitThreshold = 10;
 
   // Apply simulations if passing benefit/cost threshold
+  for (Simulation* S : Simulations) {
+    if (S->simulationBenefit() > BenefitThreshold) {
+      Changed |= S->apply();
+    }
+  }
 
   return Changed;
 }
@@ -164,6 +175,53 @@ void appendInstructions(vector<Instruction *> &Instructions, BasicBlock *BB) {
 
     Instructions.push_back(I);
   }
+}
+
+int SimulationAction::getBenefit() {
+  const int BenefitScaleFactor = 256;
+
+  return Benefit * BenefitScaleFactor;
+}
+
+int SimulationAction::getCost() {
+  return Cost;
+}
+
+bool SimulationAction::apply(BasicBlock* NewBlock, InstructionMap IMap)
+{
+  bool Changed = false;
+
+  switch (Type) {
+  case Add:
+    for (auto P : u.AddInstructions) {
+      // Translate instruction pointer to duplicated instruction pointer
+      Instruction* Reference = IMap.at(P.first);
+      Instruction* Addition  = P.second;
+
+      Reference->insertAfter(Addition);
+      Changed |= true;
+    }
+    break;
+  case Remove:
+    for (auto I : u.RemoveInstructions) {
+      // Translate instruction pointer to duplicated instruction pointer
+      IMap.at(I)->eraseFromParent();
+      Changed |= true;
+    }
+    break;
+  case Replace:
+    for (auto P : u.ReplaceInstructions) {
+      // Translate instruction pointer to duplicated instruction pointer
+      Instruction* Replacee = IMap.at(P.first);
+      Instruction* Replacer = P.second;
+
+      ReplaceInstWithInst(Replacee, Replacer);
+      Changed |= true;
+    }
+    break;
+  }
+
+  return Changed;
 }
 
 Simulation::Simulation(BasicBlock *bp, BasicBlock *bm) : BP(bp), BM(bm) {
@@ -184,19 +242,52 @@ Simulation::Simulation(BasicBlock *bp, BasicBlock *bm) : BP(bp), BM(bm) {
 
 void Simulation::run() {
   for (auto &check : AC) {
-    check->simulate(PHITranslation, Instructions);
+    SimulationAction* action = check->simulate(PHITranslation, Instructions);
+    Actions.push_back(action);
   }
 }
 
-BasicBlock *Simulation::apply() {
-  return NULL;
+int Simulation::simulationBenefit() {
+  int Benefit = 0;
+  int Cost    = 0;
+
+  for (auto A : Actions) {
+    Benefit += A->getBenefit();
+    Cost    += A->getCost();
+  }
+
+  return Benefit - Cost;
 }
 
-int MemCpyApplicabilityCheck::simulate(SymbolMap Map,
-                                       vector<Instruction *> Instrs) {
-  vector<SimulationAction *> Actions;
+InstructionMap Simulation::mergeBlocks() {
+  InstructionMap IMap;
 
-  return 0;
+  // Remove branch to BM in BP
+
+  // Add BM DUPLICATED instructions to BP if
+  // there exist no SimulationAction for it
+  // else use the SimulationAction
+  // And for all instructions -- provide a mapping
+  // even if it is to itself.
+
+  return IMap;
+}
+
+bool Simulation::apply() {
+  InstructionMap IMap = mergeBlocks();
+
+  bool Changed = false;
+
+  for (auto SA : Actions) {
+    Changed |= SA->apply(BP, IMap);
+  }
+
+  return Changed;
+}
+
+SimulationAction* MemCpyApplicabilityCheck::simulate(SymbolMap Map,
+                                       vector<Instruction *> Instrs) {
+  return NULL;
 }
 
 MemCpyApplicabilityCheck::~MemCpyApplicabilityCheck() {}
