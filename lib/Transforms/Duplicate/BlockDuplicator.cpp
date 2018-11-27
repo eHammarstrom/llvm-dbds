@@ -24,6 +24,7 @@
 //===----------------------------------------------------------------------===//
 
 #include <vector>
+#include <algorithm>
 
 #include "llvm/ADT/Statistic.h"
 #include "llvm/IR/BasicBlock.h"
@@ -150,10 +151,10 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
   bool Changed = false;
 
   // Sort simulations by benefit/cost
-  sort(Simulations.begin(), Simulations.end(),
-       [](Simulation *S1, Simulation *S2) {
-         return S1->simulationBenefit() > S2->simulationBenefit();
-       });
+  std::sort(Simulations.begin(), Simulations.end(),
+            [](Simulation *S1, Simulation *S2) -> bool {
+              return S1->simulationBenefit() > S2->simulationBenefit();
+            });
 
   const int BenefitThreshold = 10;
 
