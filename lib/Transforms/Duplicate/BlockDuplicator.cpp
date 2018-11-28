@@ -23,8 +23,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include <vector>
 #include <algorithm>
+#include <vector>
 
 #include "llvm/ADT/Statistic.h"
 #include "llvm/IR/BasicBlock.h"
@@ -34,6 +34,8 @@
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
 #include "llvm/Pass.h"
@@ -122,8 +124,6 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
     BasicBlock *BB = Node->getBlock();
     errs().write_escaped(BB->getName()) << '\n';
 
-    // TODO: perform algorithm
-
     for (BasicBlock *BBSuccessor : successors(BB)) {
       if (BlockIsIfMergePoint(BBSuccessor)) {
         // BB          = b_pi  in paper [0]
@@ -179,6 +179,20 @@ void appendInstructions(vector<Instruction *> &Instructions, BasicBlock *BB) {
   }
 }
 
+void SimulationAction::add(Instruction *Inst) {
+  assert(Type == SimulationActionType::Remove);
+  u.RemoveInsts.push_back(Inst);
+}
+
+void SimulationAction::add(pair<Instruction *, Instruction *> Pair) {
+  assert(Type == SimulationActionType::Add ||
+         Type == SimulationActionType::Replace);
+  if (Type == SimulationActionType::Add)
+    u.AddInsts.push_back(Pair);
+  else
+    u.ReplaceInsts.push_back(Pair);
+}
+
 int SimulationAction::getBenefit() {
   const int BenefitScaleFactor = 256;
 
@@ -191,8 +205,8 @@ bool SimulationAction::apply(BasicBlock *NewBlock, InstructionMap IMap) {
   bool Changed = false;
 
   switch (Type) {
-  case Add:
-    for (auto P : u.AddInstructions) {
+  case SimulationActionType::Add:
+    for (auto P : u.AddInsts) {
       // Translate instruction pointer to duplicated instruction pointer
       Instruction *Reference = IMap.at(P.first);
       Instruction *Addition = P.second;
@@ -201,15 +215,15 @@ bool SimulationAction::apply(BasicBlock *NewBlock, InstructionMap IMap) {
       Changed |= true;
     }
     break;
-  case Remove:
-    for (auto I : u.RemoveInstructions) {
+  case SimulationActionType::Remove:
+    for (auto I : u.RemoveInsts) {
       // Translate instruction pointer to duplicated instruction pointer
       IMap.at(I)->eraseFromParent();
       Changed |= true;
     }
     break;
-  case Replace:
-    for (auto P : u.ReplaceInstructions) {
+  case SimulationActionType::Replace:
+    for (auto P : u.ReplaceInsts) {
       // Translate instruction pointer to duplicated instruction pointer
       Instruction *Replacee = IMap.at(P.first);
       Instruction *Replacer = P.second;
@@ -241,8 +255,9 @@ Simulation::Simulation(BasicBlock *bp, BasicBlock *bm) : BP(bp), BM(bm) {
 
 void Simulation::run() {
   for (auto &check : AC) {
-    SimulationAction *action = check->simulate(PHITranslation, Instructions);
-    Actions.push_back(action);
+    vector<SimulationAction *> SimActions =
+        check->simulate(PHITranslation, Instructions);
+    Actions.insert(Actions.end(), SimActions.begin(), SimActions.end());
   }
 }
 
@@ -302,10 +317,68 @@ bool Simulation::apply() {
   return Changed;
 }
 
-SimulationAction *
+vector<SimulationAction *>
 MemCpyApplicabilityCheck::simulate(SymbolMap Map,
-                                   vector<Instruction *> Instrs) {
-  return NULL;
+                                   vector<Instruction *> Instructions) {
+  vector<SimulationAction *> SimActions;
+
+  // Reverse iterator to only save last memcpy
+  for (auto IIA = Instructions.rbegin(); IIA != Instructions.rend(); ++IIA) {
+    MemCpyInst *MemCpyA;
+    if (!(MemCpyA = dyn_cast<MemCpyInst>(*IIA)))
+      continue;
+
+    ConstantInt *CpySizeA = dyn_cast<ConstantInt>(MemCpyA->getLength());
+
+    // Reverse iterate after IIA and remove redundant memcpy
+    for (auto IIB = IIA + 1; IIB != Instructions.rend(); ++IIB) {
+      MemCpyInst *MemCpyB;
+      if (!(MemCpyB = dyn_cast<MemCpyInst>(*IIB)))
+        continue;
+
+      ConstantInt *CpySizeB = dyn_cast<ConstantInt>(MemCpyB->getLength());
+
+      // B = memcpy(a, b, x)
+      // ..
+      // unchanged(b)
+      // A = memcpy(b, c, y)
+      // transform(A, memcpy(a, c, y))
+      if (MemCpyA->getSource() == MemCpyB->getDest()) {
+        // TODO: see comment above
+      }
+
+      // Optimization after this point needs both copy lengths
+      if (!CpySizeA || !CpySizeB)
+        continue;
+
+      // Optimization after this point require src(A) == src(B)
+      if (MemCpyA->getSource() != MemCpyB->getSource())
+        continue;
+
+      // Optimization after this point require dest(A) == dest(B)
+      if (MemCpyA->getDest() != MemCpyB->getDest())
+        continue;
+
+      // B = memcpy(a, b, 10)
+      // A = memcpy(a, b, 12)
+      // remove(B)
+      if (CpySizeA->getZExtValue() >= CpySizeB->getZExtValue()) {
+        SimulationAction *SA =
+            new SimulationAction(SimulationActionType::Remove);
+        SA->add(*IIB);
+        SimActions.push_back(SA);
+      }
+
+      // B = memcpy(a, b, 12)
+      // A = memcpy(a, b, 10)
+      // transform(B, memcpy(a+10, b+10, 2))
+      if (CpySizeA->getZExtValue() < CpySizeB->getZExtValue()) {
+        // TODO: see comment above
+      }
+    }
+  }
+
+  return SimActions;
 }
 
 MemCpyApplicabilityCheck::~MemCpyApplicabilityCheck() {}
