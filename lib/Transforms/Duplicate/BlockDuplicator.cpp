@@ -179,6 +179,7 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
            << ") has Benefit = " << S->simulationBenefit() << '\n';
     if (S->simulationBenefit() > BenefitThreshold) {
       Changed |= S->apply();
+      errs() << "\tApplied simulation! (" << Changed << ")\n";
     }
   }
 
