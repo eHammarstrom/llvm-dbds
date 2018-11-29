@@ -102,8 +102,10 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
   if (skipFunction(F))
     return false;
 
+#ifdef PRINTS
   errs() << "simulator: ";
   errs().write_escaped(F.getName()) << '\n';
+#endif
   ++FunctionCounter;
 
   // domtree<node<basicblock>>> of function F
@@ -126,16 +128,20 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
     WorkList.pop_back();
 
     BasicBlock *BB = Node->getBlock();
+#ifdef PRINTS
     errs().write_escaped(BB->getName()) << '\n';
+#endif
 
     for (BasicBlock *BBSuccessor : successors(BB)) {
       if (BlockIsIfMergePoint(BBSuccessor)) {
         // BB          = b_pi  in paper [0]
         // BBSuccessor = b_m   in paper [0]
 
+#ifdef PRINTS
         errs() << '\t' << "has successor merge point " << BBSuccessor->getName()
                << '\n';
         errs() << '\t' << "running simulation\n";
+#endif
 
         /* Test, prints cost of all instructions in succ(BB)
         for (auto II = BBSuccessor->begin(); II != BBSuccessor->end(); ++II) {
@@ -173,13 +179,19 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
   const int BenefitThreshold = 0;
 
   // Apply simulations if passing benefit/cost threshold
+#ifdef PRINTS
   int i = 0;
+#endif
   for (Simulation *S : Simulations) {
+#ifdef PRINTS
     errs() << "Simulation(" << ++i
            << ") has Benefit = " << S->simulationBenefit() << '\n';
+#endif
     if (S->simulationBenefit() > BenefitThreshold) {
       Changed |= S->apply();
+#ifdef PRINTS
       errs() << "\tApplied simulation! (" << Changed << ")\n";
+#endif
     }
   }
 
@@ -227,7 +239,9 @@ RemoveAction::RemoveAction(TargetTransformInfo *TTI, Instruction *I)
   // in this case it is only a benefit
   unsigned InstCost =
       TTI->getInstructionCost(I, TargetTransformInfo::TCK_RecipThroughput);
+#ifdef PRINTS
   errs() << "\tA simulated removal will save = " << InstCost << '\n';
+#endif
   Benefit += InstCost;
 }
 
