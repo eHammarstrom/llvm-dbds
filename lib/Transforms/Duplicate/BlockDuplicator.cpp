@@ -27,6 +27,7 @@
 #include <vector>
 
 #include "llvm/ADT/Statistic.h"
+#include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Dominators.h"
@@ -71,6 +72,7 @@ struct DBDuplicationSimulation : public FunctionPass {
 
     // required - need before our pass
     AU.addRequired<DominatorTreeWrapperPass>();
+    AU.addRequired<TargetTransformInfoWrapperPass>();
 
     /*
       AU.addRequiredID(LoopSimplifyID);
@@ -106,6 +108,8 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
 
   // domtree<node<basicblock>>> of function F
   DominatorTree &DT = getAnalysis<DominatorTreeWrapperPass>().getDomTree();
+  TargetTransformInfo &TTI =
+      getAnalysis<TargetTransformInfoWrapperPass>().getTTI(F);
 
   DT.print(errs());
 
@@ -133,8 +137,18 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
                << '\n';
         errs() << '\t' << "running simulation\n";
 
+        /* Test, prints cost of all instructions in succ(BB)
+        for (auto II = BBSuccessor->begin(); II != BBSuccessor->end(); ++II) {
+          unsigned Cost = TTI.getInstructionCost(
+              &(*II), TargetTransformInfo::TCK_RecipThroughput);
+          errs() << '\t';
+          (*II).print(errs());
+          errs() << " = " << Cost << '\n';
+        }
+        */
+
         // Simulate duplication
-        Simulation *S = new Simulation(BB, BBSuccessor);
+        Simulation *S = new Simulation(&TTI, BB, BBSuccessor);
         S->run();
 
         // Collect all simulations
@@ -156,10 +170,13 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
               return S1->simulationBenefit() > S2->simulationBenefit();
             });
 
-  const int BenefitThreshold = 10;
+  const int BenefitThreshold = 0;
 
   // Apply simulations if passing benefit/cost threshold
+  int i = 0;
   for (Simulation *S : Simulations) {
+    errs() << "Simulation(" << ++i
+           << ") has Benefit = " << S->simulationBenefit() << '\n';
     if (S->simulationBenefit() > BenefitThreshold) {
       Changed |= S->apply();
     }
@@ -187,7 +204,8 @@ int SimulationAction::getBenefit() {
 
 int SimulationAction::getCost() { return Cost; }
 
-AddAction::AddAction(pair<Instruction *, Instruction *> P)
+AddAction::AddAction(TargetTransformInfo *TTI,
+                     pair<Instruction *, Instruction *> P)
     : ActionInst(P) {
   // TODO: calculate benefit/cost
   // in this case it is only a cost
@@ -202,9 +220,14 @@ bool AddAction::apply(BasicBlock *NewBlock, InstructionMap IMap) {
   return true; // there may be cases where we cannot apply an action
 }
 
-RemoveAction::RemoveAction(Instruction *I) : ActionInst(I) {
+RemoveAction::RemoveAction(TargetTransformInfo *TTI, Instruction *I)
+    : ActionInst(I) {
   // TODO: calculate benefit/cost
   // in this case it is only a benefit
+  unsigned InstCost =
+      TTI->getInstructionCost(I, TargetTransformInfo::TCK_RecipThroughput);
+  errs() << "\tA simulated removal will save = " << InstCost << '\n';
+  Benefit += InstCost;
 }
 
 bool RemoveAction::apply(BasicBlock *NewBlock, InstructionMap IMap) {
@@ -214,7 +237,8 @@ bool RemoveAction::apply(BasicBlock *NewBlock, InstructionMap IMap) {
   return true;
 }
 
-ReplaceAction::ReplaceAction(pair<Instruction *, Instruction *> P)
+ReplaceAction::ReplaceAction(TargetTransformInfo *TTI,
+                             pair<Instruction *, Instruction *> P)
     : ActionInst(P) {
   // TODO: calculate benefit/cost
   // in this case we both benefit and cost
@@ -229,7 +253,8 @@ bool ReplaceAction::apply(BasicBlock *NewBlock, InstructionMap IMap) {
   return true;
 }
 
-Simulation::Simulation(BasicBlock *bp, BasicBlock *bm) : BP(bp), BM(bm) {
+Simulation::Simulation(TargetTransformInfo *TTI, BasicBlock *bp, BasicBlock *bm)
+    : TTI(TTI), BP(bp), BM(bm) {
 
   for (BasicBlock::iterator I = BM->begin(); isa<PHINode>(I); ++I) {
     PHINode *PN = cast<PHINode>(I);
@@ -249,7 +274,7 @@ void Simulation::run() {
   for (auto &check : AC) {
     // Simulate an optimization using an AC
     vector<SimulationAction *> SimActions =
-        check->simulate(PHITranslation, Instructions);
+        check->simulate(TTI, PHITranslation, Instructions);
     // Save the generated actions taken by optimization
     Actions.insert(Actions.end(), SimActions.begin(), SimActions.end());
   }
@@ -263,6 +288,8 @@ int Simulation::simulationBenefit() {
     Benefit += A->getBenefit();
     Cost += A->getCost();
   }
+
+  // TODO: evaluate the benefit function
 
   return Benefit - Cost;
 }
@@ -312,7 +339,7 @@ bool Simulation::apply() {
 }
 
 vector<SimulationAction *>
-MemCpyApplicabilityCheck::simulate(SymbolMap Map,
+MemCpyApplicabilityCheck::simulate(TargetTransformInfo *TTI, SymbolMap Map,
                                    vector<Instruction *> Instructions) {
   vector<SimulationAction *> SimActions;
 
@@ -357,7 +384,7 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
       // A = memcpy(a, b, 12)
       // remove(B)
       if (CpySizeA->getZExtValue() >= CpySizeB->getZExtValue()) {
-        RemoveAction *SA = new RemoveAction(*IIB);
+        RemoveAction *SA = new RemoveAction(TTI, *IIB);
         SimActions.push_back(SA);
       }
 

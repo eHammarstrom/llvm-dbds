@@ -41,16 +41,16 @@ public:
   int getBenefit();
   int getCost();
 
-private:
+protected:
   // Benefit of duplication simulation
-  int Benefit;
+  int Benefit = 0;
   // Cost of duplication simulation
-  int Cost;
+  int Cost = 0;
 };
 
 class AddAction : public SimulationAction {
 public:
-  AddAction(pair<Instruction *, Instruction *>);
+  AddAction(TargetTransformInfo *, pair<Instruction *, Instruction *>);
   bool apply(BasicBlock *, InstructionMap);
 
 private:
@@ -59,7 +59,7 @@ private:
 
 class RemoveAction : public SimulationAction {
 public:
-  RemoveAction(Instruction *);
+  RemoveAction(TargetTransformInfo *, Instruction *);
   bool apply(BasicBlock *, InstructionMap);
 
 private:
@@ -68,7 +68,7 @@ private:
 
 class ReplaceAction : public SimulationAction {
 public:
-  ReplaceAction(pair<Instruction *, Instruction *>);
+  ReplaceAction(TargetTransformInfo *, pair<Instruction *, Instruction *>);
   bool apply(BasicBlock *, InstructionMap);
 
 private:
@@ -81,8 +81,11 @@ public:
   ApplicabilityCheck() {}
   virtual ~ApplicabilityCheck() = 0;
   // Returns the actions that should be taken to apply an optimization
-  virtual vector<SimulationAction *> simulate(SymbolMap,
+  virtual vector<SimulationAction *> simulate(TargetTransformInfo *, SymbolMap,
                                               vector<Instruction *>) = 0;
+
+private:
+  TargetTransformInfo *TTI;
 };
 
 // MemCpyOptimizer-like optimizations
@@ -90,20 +93,24 @@ class MemCpyApplicabilityCheck : public ApplicabilityCheck {
 public:
   MemCpyApplicabilityCheck() {}
   ~MemCpyApplicabilityCheck();
-  vector<SimulationAction *> simulate(SymbolMap, vector<Instruction *>);
+  vector<SimulationAction *> simulate(TargetTransformInfo *, SymbolMap,
+                                      vector<Instruction *>);
 };
 
 class Simulation {
 public:
-  Simulation(BasicBlock *BP, BasicBlock *BM);
+  Simulation(TargetTransformInfo *, BasicBlock *, BasicBlock *);
   ~Simulation();
   void run();
+  // The simulation benefit accounts for the cost of the duplication
   int simulationBenefit();
   // Performs duplication, returning the merged BasicBlock with the new
   // instructions. This will replace bp in the CFG.
   bool apply();
 
 private:
+  // Instruction cost model
+  TargetTransformInfo *TTI;
   // Duplicate BM, and merge inte BP
   InstructionMap mergeBlocks();
   // ApplicabilityChecks

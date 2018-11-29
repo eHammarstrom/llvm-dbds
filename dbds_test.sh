@@ -5,7 +5,8 @@
     #exit 1
 #fi
 
-opt -load ../build/lib/LLVMBlockDuplicator.so -O3 -simulator -dot-dom -dot-cfg < test/Transforms/Duplicate/memcpy_full_redundancies_O0.ll > /dev/null
+rm -f test.ll
+opt -S -o test.ll -load ../build/lib/LLVMBlockDuplicator.so -O3 -simulator -dot-dom -dot-cfg < test/Transforms/Duplicate/memcpy_full_redundancies_O0.ll > /dev/null
 
 for dot_file in *.dot; do
     [ -f "$dot_file" ] || break
