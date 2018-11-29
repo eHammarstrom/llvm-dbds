@@ -179,20 +179,6 @@ void appendInstructions(vector<Instruction *> &Instructions, BasicBlock *BB) {
   }
 }
 
-void SimulationAction::add(Instruction *Inst) {
-  assert(Type == SimulationActionType::Remove);
-  u.RemoveInsts.push_back(Inst);
-}
-
-void SimulationAction::add(pair<Instruction *, Instruction *> Pair) {
-  assert(Type == SimulationActionType::Add ||
-         Type == SimulationActionType::Replace);
-  if (Type == SimulationActionType::Add)
-    u.AddInsts.push_back(Pair);
-  else
-    u.ReplaceInsts.push_back(Pair);
-}
-
 int SimulationAction::getBenefit() {
   const int BenefitScaleFactor = 256;
 
@@ -201,40 +187,46 @@ int SimulationAction::getBenefit() {
 
 int SimulationAction::getCost() { return Cost; }
 
-bool SimulationAction::apply(BasicBlock *NewBlock, InstructionMap IMap) {
-  bool Changed = false;
+AddAction::AddAction(pair<Instruction *, Instruction *> P)
+    : ActionInst(P) {
+  // TODO: calculate benefit/cost
+  // in this case it is only a cost
+}
 
-  switch (Type) {
-  case SimulationActionType::Add:
-    for (auto P : u.AddInsts) {
-      // Translate instruction pointer to duplicated instruction pointer
-      Instruction *Reference = IMap.at(P.first);
-      Instruction *Addition = P.second;
+bool AddAction::apply(BasicBlock *NewBlock, InstructionMap IMap) {
+  // Translate instruction pointer to duplicated instruction pointer
+  // Do this in NewBlock
+  Instruction *Reference = IMap.at(ActionInst.first);
+  Instruction *Addition = ActionInst.second;
+  Reference->insertAfter(Addition);
+  return true; // there may be cases where we cannot apply an action
+}
 
-      Reference->insertAfter(Addition);
-      Changed |= true;
-    }
-    break;
-  case SimulationActionType::Remove:
-    for (auto I : u.RemoveInsts) {
-      // Translate instruction pointer to duplicated instruction pointer
-      IMap.at(I)->eraseFromParent();
-      Changed |= true;
-    }
-    break;
-  case SimulationActionType::Replace:
-    for (auto P : u.ReplaceInsts) {
-      // Translate instruction pointer to duplicated instruction pointer
-      Instruction *Replacee = IMap.at(P.first);
-      Instruction *Replacer = P.second;
+RemoveAction::RemoveAction(Instruction *I) : ActionInst(I) {
+  // TODO: calculate benefit/cost
+  // in this case it is only a benefit
+}
 
-      ReplaceInstWithInst(Replacee, Replacer);
-      Changed |= true;
-    }
-    break;
-  }
+bool RemoveAction::apply(BasicBlock *NewBlock, InstructionMap IMap) {
+  // Translate instruction pointer to duplicated instruction pointer
+  // Do this in NewBlock
+  IMap.at(ActionInst)->eraseFromParent();
+  return true;
+}
 
-  return Changed;
+ReplaceAction::ReplaceAction(pair<Instruction *, Instruction *> P)
+    : ActionInst(P) {
+  // TODO: calculate benefit/cost
+  // in this case we both benefit and cost
+}
+
+bool ReplaceAction::apply(BasicBlock *NewBlock, InstructionMap IMap) {
+  // Translate instruction pointer to duplicated instruction pointer
+  // Do this in NewBlock
+  Instruction *Replacee = IMap.at(ActionInst.first);
+  Instruction *Replacer = ActionInst.second;
+  ReplaceInstWithInst(Replacee, Replacer);
+  return true;
 }
 
 Simulation::Simulation(BasicBlock *bp, BasicBlock *bm) : BP(bp), BM(bm) {
@@ -255,8 +247,10 @@ Simulation::Simulation(BasicBlock *bp, BasicBlock *bm) : BP(bp), BM(bm) {
 
 void Simulation::run() {
   for (auto &check : AC) {
+    // Simulate an optimization using an AC
     vector<SimulationAction *> SimActions =
         check->simulate(PHITranslation, Instructions);
+    // Save the generated actions taken by optimization
     Actions.insert(Actions.end(), SimActions.begin(), SimActions.end());
   }
 }
@@ -363,9 +357,7 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
       // A = memcpy(a, b, 12)
       // remove(B)
       if (CpySizeA->getZExtValue() >= CpySizeB->getZExtValue()) {
-        SimulationAction *SA =
-            new SimulationAction(SimulationActionType::Remove);
-        SA->add(*IIB);
+        RemoveAction *SA = new RemoveAction(*IIB);
         SimActions.push_back(SA);
       }
 

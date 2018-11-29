@@ -33,37 +33,46 @@ using namespace std;
 typedef map<Value *, Value *> SymbolMap;
 typedef map<Instruction *, Instruction *> InstructionMap;
 
-enum class SimulationActionType {
-  Add,     // Action adds instruction
-  Remove,  // Action removes instruction(s)
-  Replace, // Action replaces instruction(s)
-};
-
 class SimulationAction {
 public:
+  SimulationAction() {}
   // Calculates the benefit of an action taken
-  SimulationAction(SimulationActionType);
-  void add(pair<Instruction *, Instruction *>);
-  void add(Instruction *);
+  virtual bool apply(BasicBlock *, InstructionMap) = 0;
   int getBenefit();
   int getCost();
-  bool apply(BasicBlock *, InstructionMap);
 
 private:
   // Benefit of duplication simulation
   int Benefit;
   // Cost of duplication simulation
   int Cost;
-  // Type of action
-  SimulationActionType Type;
-  union {
-    // Instruction to be added by action, <Reference, Addition>
-    vector<pair<Instruction *, Instruction *>> AddInsts;
-    // Instructions to be removed by action
-    vector<Instruction *> RemoveInsts;
-    // Instruction pair to be replaced, <Replacee, Replacer>
-    vector<pair<Instruction *, Instruction *>> ReplaceInsts;
-  } u;
+};
+
+class AddAction : public SimulationAction {
+public:
+  AddAction(pair<Instruction *, Instruction *>);
+  bool apply(BasicBlock *, InstructionMap);
+
+private:
+  pair<Instruction *, Instruction *> ActionInst;
+};
+
+class RemoveAction : public SimulationAction {
+public:
+  RemoveAction(Instruction *);
+  bool apply(BasicBlock *, InstructionMap);
+
+private:
+  Instruction *ActionInst;
+};
+
+class ReplaceAction : public SimulationAction {
+public:
+  ReplaceAction(pair<Instruction *, Instruction *>);
+  bool apply(BasicBlock *, InstructionMap);
+
+private:
+  pair<Instruction *, Instruction *> ActionInst;
 };
 
 // Interface to be implemented by an optimization
