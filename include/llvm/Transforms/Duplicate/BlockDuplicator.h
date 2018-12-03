@@ -78,28 +78,39 @@ private:
 // Interface to be implemented by an optimization
 class ApplicabilityCheck {
 public:
-  ApplicabilityCheck() {}
+  ApplicabilityCheck(const TargetTransformInfo *TTI,
+                     const TargetLibraryInfo *TLI)
+      : TTI(TTI), TLI(TLI) {}
   virtual ~ApplicabilityCheck() = 0;
   // Returns the actions that should be taken to apply an optimization
-  virtual vector<SimulationAction *> simulate(TargetTransformInfo *, SymbolMap,
-                                              vector<Instruction *>) = 0;
+  virtual vector<SimulationAction *> simulate(const SymbolMap,
+                                              const vector<Instruction *>) = 0;
 
 private:
-  TargetTransformInfo *TTI;
+  const TargetTransformInfo *TTI;
+  const TargetLibraryInfo *TLI;
 };
 
 // MemCpyOptimizer-like optimizations
 class MemCpyApplicabilityCheck : public ApplicabilityCheck {
 public:
-  MemCpyApplicabilityCheck() {}
+  using ApplicabilityCheck::ApplicabilityCheck;
   ~MemCpyApplicabilityCheck();
-  vector<SimulationAction *> simulate(TargetTransformInfo *, SymbolMap,
-                                      vector<Instruction *>);
+  vector<SimulationAction *> simulate(const SymbolMap, const vector<Instruction *>);
+};
+
+// DeadStoreElimination-like optimizations
+class DeadStoreApplicabilityCheck : public ApplicabilityCheck {
+public:
+  using ApplicabilityCheck::ApplicabilityCheck;
+  ~DeadStoreApplicabilityCheck();
+  vector<SimulationAction *> simulate(const SymbolMap, const vector<Instruction *>);
 };
 
 class Simulation {
 public:
-  Simulation(TargetTransformInfo *, BasicBlock *, BasicBlock *);
+  Simulation(const TargetTransformInfo *TTI, const TargetLibraryInfo *TLI,
+             BasicBlock *bp, BasicBlock *bm);
   ~Simulation();
   void run();
   // The simulation benefit accounts for the cost of the duplication
@@ -110,11 +121,13 @@ public:
 
 private:
   // Instruction cost model
-  TargetTransformInfo *TTI;
+  const TargetTransformInfo *TTI;
+  // Function usage info and more
+  const TargetLibraryInfo *TLI;
   // Duplicate BM, and merge inte BP
   InstructionMap mergeBlocks();
   // ApplicabilityChecks
-  vector<ApplicabilityCheck *> AC = {new MemCpyApplicabilityCheck()};
+  vector<ApplicabilityCheck *> AC;
   // Predecessor basic block
   BasicBlock *BP;
   // Successor merge basic block

@@ -27,8 +27,8 @@
 #include <vector>
 
 #include "llvm/ADT/Statistic.h"
-#include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/Analysis/DependenceAnalysis.h"
+#include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Dominators.h"
@@ -74,8 +74,10 @@ struct DBDuplicationSimulation : public FunctionPass {
     // required - need before our pass
     AU.addRequired<DominatorTreeWrapperPass>();
     AU.addRequired<TargetTransformInfoWrapperPass>();
-    AU.addRequired<DependenceAnalysisWrapperPass>();
+    AU.addRequired<TargetLibraryInfoWrapperPass>();
 
+    // maybe?
+    // AU.addRequired<DependenceAnalysisWrapperPass>();
   }
 };
 } // namespace
@@ -95,9 +97,9 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
   ++FunctionCounter;
 
   // domtree<node<basicblock>>> of function F
-  DominatorTree &DT = getAnalysis<DominatorTreeWrapperPass>().getDomTree();
-  TargetTransformInfo &TTI =
-      getAnalysis<TargetTransformInfoWrapperPass>().getTTI(F);
+  auto &DT = getAnalysis<DominatorTreeWrapperPass>().getDomTree();
+  auto &TTI = getAnalysis<TargetTransformInfoWrapperPass>().getTTI(F);
+  auto &TLI = getAnalysis<TargetLibraryInfoWrapperPass>().getTLI();
 
   DT.print(errs());
 
@@ -140,7 +142,7 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
         */
 
         // Simulate duplication
-        Simulation *S = new Simulation(&TTI, BB, BBSuccessor);
+        Simulation *S = new Simulation(&TTI, &TLI, BB, BBSuccessor);
         S->run();
 
         // Collect all simulations
@@ -254,8 +256,13 @@ bool ReplaceAction::apply(BasicBlock *NewBlock, InstructionMap IMap) {
   return true;
 }
 
-Simulation::Simulation(TargetTransformInfo *TTI, BasicBlock *bp, BasicBlock *bm)
-    : TTI(TTI), BP(bp), BM(bm) {
+Simulation::Simulation(const TargetTransformInfo *TTI,
+                       const TargetLibraryInfo *TLI, BasicBlock *bp,
+                       BasicBlock *bm)
+    : TTI(TTI), TLI(TLI), BP(bp), BM(bm) {
+
+  AC.push_back(new MemCpyApplicabilityCheck(TTI, TLI));
+  AC.push_back(new DeadStoreApplicabilityCheck(TTI, TLI));
 
   for (BasicBlock::iterator I = BM->begin(); isa<PHINode>(I); ++I) {
     PHINode *PN = cast<PHINode>(I);
@@ -275,7 +282,7 @@ void Simulation::run() {
   for (auto &check : AC) {
     // Simulate an optimization using an AC
     vector<SimulationAction *> SimActions =
-        check->simulate(TTI, PHITranslation, Instructions);
+        check->simulate(PHITranslation, Instructions);
     // Save the generated actions taken by optimization
     Actions.insert(Actions.end(), SimActions.begin(), SimActions.end());
   }
@@ -349,9 +356,11 @@ bool Simulation::apply() {
 }
 
 vector<SimulationAction *>
-MemCpyApplicabilityCheck::simulate(TargetTransformInfo *TTI, SymbolMap Map,
-                                   vector<Instruction *> Instructions) {
+MemCpyApplicabilityCheck::simulate(SymbolMap Map,
+                                   const vector<Instruction *> Instructions) {
   vector<SimulationAction *> SimActions;
+
+  errs() << "Performing MemCpy AC!\n";
 
   // Reverse iterator to only save last memcpy
   for (auto IIA = Instructions.rbegin(); IIA != Instructions.rend(); ++IIA) {
@@ -396,6 +405,7 @@ MemCpyApplicabilityCheck::simulate(TargetTransformInfo *TTI, SymbolMap Map,
       if (MemCpyA->getDest() != MemCpyB->getDest())
         continue;
 
+      /* This should be handled by Dead Store Elimination AC
       // B = memcpy(b <- a, 10)
       // A = memcpy(b <- a, 12)
       // remove(B)
@@ -403,6 +413,7 @@ MemCpyApplicabilityCheck::simulate(TargetTransformInfo *TTI, SymbolMap Map,
         RemoveAction *SA = new RemoveAction(TTI, *IIB);
         SimActions.push_back(SA);
       }
+      */
 
       // B = memcpy(b <- a, 12)
       // A = memcpy(b <- a, 10)
@@ -417,3 +428,20 @@ MemCpyApplicabilityCheck::simulate(TargetTransformInfo *TTI, SymbolMap Map,
 }
 
 MemCpyApplicabilityCheck::~MemCpyApplicabilityCheck() {}
+
+vector<SimulationAction *>
+DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
+                                      vector<Instruction *> Instructions) {
+  vector<SimulationAction *> SimActions;
+
+  errs() << "Performing DSE AC!\n";
+
+  // Reverse iterator to only save last memcpy
+  for (auto II = Instructions.begin(); II != Instructions.end(); ++II) {
+    // Instruction *I = *II;
+  }
+
+  return SimActions;
+}
+
+DeadStoreApplicabilityCheck::~DeadStoreApplicabilityCheck() {}
