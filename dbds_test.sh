@@ -5,6 +5,7 @@
 
 
 PROJECT_DIR=$(pwd)
+TEST_DIR=$PROJECT_DIR/test/Transforms/Duplicate
 
 if [ "$1" == "stats" ]
 then
@@ -15,10 +16,21 @@ then
 	cat out | grep Simulator
     fi
 else
+    # generate LLVM IR from test_programs
+    cd $PROJECT_DIR/test_programs
+    for test_prog in *.c; do
+	test_no_ext=${test_prog%%.*}
+	clang -S -O1 -emit-llvm \
+	      -fno-inline-functions \
+	      $test_prog -o $TEST_DIR/$test_no_ext.ll
+    done
+
     mkdir ./test_result
     rm -f ./test_result/*
 
-    cd ./test/Transforms/Duplicate
+    # optimize all test IR
+    cd $TEST_DIR
+
     for test_file in *.ll; do
 	opt -S \
 	    -o $PROJECT_DIR/test_result/dbds_$test_file \
@@ -28,10 +40,24 @@ else
 	    > /dev/null
     done
 
+    # produce graphs for all tests
     mkdir $PROJECT_DIR/graphs
     for dot_file in *.dot; do
 	[ -f "$dot_file" ] || break
 	dot -Tps $dot_file -o $dot_file.ps
 	mv $dot_file.ps $PROJECT_DIR/graphs/
+	rm $dot_file
     done
+
+    # compile and run tests
+    cd $PROJECT_DIR/test_result
+
+    echo "10" > input
+    for test_file in *.ll; do
+	test_no_ext=${test_file%%.*}
+	llc $test_no_ext.ll
+	clang $test_no_ext.s -o $test_no_ext.e
+	./$test_no_ext.e < input > $test_no_ext.output
+    done
+
 fi
