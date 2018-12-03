@@ -12,6 +12,7 @@ cmake ../src -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
   -DLLVM_USE_SANITIZER=Address
 
+
+  #-DLLVM_BINUTILS_INCDIR=../../binutils/include # builds LLVMgold.so
   #-DLLVM_BUILD_DOCS=ON \
   #-DLLVM_ENABLE_DOXYGEN=ON \
-
