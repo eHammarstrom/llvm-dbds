@@ -28,6 +28,7 @@
 
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
+#include "llvm/Analysis/DependenceAnalysis.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Dominators.h"
@@ -73,23 +74,8 @@ struct DBDuplicationSimulation : public FunctionPass {
     // required - need before our pass
     AU.addRequired<DominatorTreeWrapperPass>();
     AU.addRequired<TargetTransformInfoWrapperPass>();
+    AU.addRequired<DependenceAnalysisWrapperPass>();
 
-    /*
-      AU.addRequiredID(LoopSimplifyID);
-      AU.addRequiredID(LCSSAID);
-    */
-    /*
-      AU.addRequired<LoopInfo>();
-      AU.addRequired<DependenceAnalysis>();
-      AU.addRequired<ScalarEvolution>();
-      AU.addRequired<TargetTransformInfo>();
-    */
-
-    // preserved - not invalidated
-    /*
-      AU.addPreserved<DominatorTree>();
-      AU.addPreserved<DependenceAnalysis>();
-    */
   }
 };
 } // namespace
@@ -331,11 +317,20 @@ InstructionMap Simulation::mergeBlocks() {
 
     IMap.insert(pair<Instruction *, Instruction *>(I, ClonedInstruction));
 
-    if (isa<PHINode>(I)) {
-      BP->getInstList().insert(BP->begin(), ClonedInstruction);
+    PHINode *PNC = dyn_cast<PHINode>(ClonedInstruction);
+    if (PNC) {
+      // Only insert PHI-function if we don't have a mapping to a concrete Value
+      if (PHITranslation.find(PNC) == PHITranslation.end())
+        BP->getInstList().insert(BP->begin(), ClonedInstruction);
     } else {
       BP->getInstList().insert(BP->end(), ClonedInstruction);
     }
+  }
+
+  // Replace all uses of the removed PHI-functions
+  // with the new concrete Value.
+  for (auto &KV : PHITranslation) {
+    KV.first->replaceAllUsesWith(KV.second);
   }
 
   return IMap;
