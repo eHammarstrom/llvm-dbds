@@ -20,7 +20,7 @@ else
     cd $PROJECT_DIR/test_programs
     for test_prog in *.c; do
 	test_no_ext=${test_prog%%.*}
-	clang -S -O1 -emit-llvm \
+	clang -S -O0 -Xclang -disable-O0-optnone -emit-llvm \
 	      -fno-inline-functions \
 	      $test_prog -o $TEST_DIR/$test_no_ext.ll
     done
