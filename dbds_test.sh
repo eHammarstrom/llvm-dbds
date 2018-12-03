@@ -25,19 +25,23 @@ else
 	      $test_prog -o $TEST_DIR/$test_no_ext.ll
     done
 
-    mkdir ./test_result
-    rm -f ./test_result/*
+    cd $PROJECT_DIR
+
+    mkdir test_result
+    rm -f test_result/*
 
     # optimize all test IR
     cd $TEST_DIR
 
     for test_file in *.ll; do
+	# test_no_ext=${test_file%%.*}
+	# OUT_FILE=$PROJECT_DIR/test_result/out_$test_no_ext.txt
+
 	opt -S \
 	    -o $PROJECT_DIR/test_result/dbds_$test_file \
 	    -load $PROJECT_DIR/../build/lib/LLVMBlockDuplicator.so \
 	    -O3 -simulator -simplifycfg -dot-dom -dot-cfg \
-	    < $test_file \
-	    > /dev/null
+	    < $test_file #&> OUT_FILE # redirect stdin and stderr to OUT_FILE
     done
 
     # produce graphs for all tests

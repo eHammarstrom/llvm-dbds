@@ -363,17 +363,23 @@ MemCpyApplicabilityCheck::simulate(TargetTransformInfo *TTI, SymbolMap Map,
 
     // Reverse iterate after IIA and remove redundant memcpy
     for (auto IIB = IIA + 1; IIB != Instructions.rend(); ++IIB) {
+      Instruction *IB = *IIB;
+
       MemCpyInst *MemCpyB;
-      if (!(MemCpyB = dyn_cast<MemCpyInst>(*IIB)))
+      if (!(MemCpyB = dyn_cast<MemCpyInst>(IB)))
         continue;
+
+      // We cannot optimize volatile memory
+      if (MemCpyB->isVolatile())
+        break;
 
       ConstantInt *CpySizeB = dyn_cast<ConstantInt>(MemCpyB->getLength());
 
-      // B = memcpy(a, b, x)
+      // B = memcpy(b <- a, x)
       // ..
       // unchanged(b)
-      // A = memcpy(b, c, y)
-      // transform(A, memcpy(a, c, y))
+      // A = memcpy(c <- b, y)
+      // transform(A, memcpy(c <- a, y))
       if (MemCpyA->getSource() == MemCpyB->getDest()) {
         // TODO: see comment above
       }
@@ -390,17 +396,17 @@ MemCpyApplicabilityCheck::simulate(TargetTransformInfo *TTI, SymbolMap Map,
       if (MemCpyA->getDest() != MemCpyB->getDest())
         continue;
 
-      // B = memcpy(a, b, 10)
-      // A = memcpy(a, b, 12)
+      // B = memcpy(b <- a, 10)
+      // A = memcpy(b <- a, 12)
       // remove(B)
       if (CpySizeA->getZExtValue() >= CpySizeB->getZExtValue()) {
         RemoveAction *SA = new RemoveAction(TTI, *IIB);
         SimActions.push_back(SA);
       }
 
-      // B = memcpy(a, b, 12)
-      // A = memcpy(a, b, 10)
-      // transform(B, memcpy(a+10, b+10, 2))
+      // B = memcpy(b <- a, 12)
+      // A = memcpy(b <- a, 10)
+      // transform(B, memcpy((b+10) <- (a+10), 2))
       if (CpySizeA->getZExtValue() < CpySizeB->getZExtValue()) {
         // TODO: see comment above
       }
