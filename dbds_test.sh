@@ -10,26 +10,49 @@ TEST_DIR=$PROJECT_DIR/test/Transforms/Duplicate
 # use built opt because of our lib mods
 OPT=$PROJECT_DIR/../build/bin/opt
 
+# generate LLVM IR from test_programs
+cd $PROJECT_DIR/test_programs
+
+for test_prog in *.c; do
+    test_no_ext=${test_prog%%.*}
+    clang -S -O0 -Xclang -disable-O0-optnone -emit-llvm \
+	  -fno-inline-functions \
+	  $test_prog -o $TEST_DIR/$test_no_ext.ll
+done
+
+cd $PROJECT_DIR
+
+
 if [ "$1" == "stats" ]
 then
-    $OPT -debug-pass=Structure -S -o /dev/null -load ../build/lib/LLVMBlockDuplicator.so -O3 -simulator -simplifycfg -time-passes -stats < test/Transforms/Duplicate/memcpy_full_redundancies_O0.ll 2> out > /dev/null
+    # print stats for all tests
+    cd $TEST_DIR
 
-    if [ "$2" == "grep" ]
-    then
-	cat out | grep Simulator
-    fi
-else
-    # generate LLVM IR from test_programs
-    cd $PROJECT_DIR/test_programs
-    for test_prog in *.c; do
-	test_no_ext=${test_prog%%.*}
-	clang -S -O0 -Xclang -disable-O0-optnone -emit-llvm \
-	      -fno-inline-functions \
-	      $test_prog -o $TEST_DIR/$test_no_ext.ll
+    for test_file in *.ll; do
+	# test_no_ext=${test_file%%.*}
+	# OUT_FILE=$PROJECT_DIR/test_result/out_$test_no_ext.txt
+
+	if [ "$2" == "grep" ]
+	then
+	    $OPT -debug-pass=Structure -S -o /dev/null \
+		 -load $PROJECT_DIR/../build/lib/LLVMBlockDuplicator.so \
+		 -O3 -simulator -simplifycfg \
+		 -time-passes -stats \
+		 < $test_file 2> out > /dev/null
+
+	    cat out | grep $3
+	else
+	    $OPT -debug-pass=Structure -S -o /dev/null \
+		 -load $PROJECT_DIR/../build/lib/LLVMBlockDuplicator.so \
+		 -O3 -simulator -simplifycfg \
+		 -time-passes -stats \
+		 < $test_file > /dev/null
+	fi
     done
 
-    cd $PROJECT_DIR
+    rm -f out
 
+else
     mkdir test_result
     rm -f test_result/*
 
