@@ -23,10 +23,19 @@
 #ifndef LLVM_TRANSFORMS_DUPLICATE_BLOCKDUPLICATOR_H
 #define LLVM_TRANSFORMS_DUPLICATE_BLOCKDUPLICATOR_H
 
+#include "llvm/Transforms/Scalar/DeadStoreElimination.h"
+
 namespace llvm {
 namespace blockduplicator {
 
 using namespace std;
+
+dse::OverwriteResult
+simplifiedIsOverwrite(const MemoryLocation &Later,
+                      const MemoryLocation &Earlier, const DataLayout &DL,
+                      const TargetLibraryInfo &TLI, int64_t &EarlierOff,
+                      int64_t &LaterOff, Instruction *DepWrite,
+                      dse::InstOverlapIntervalsTy &IOL, AliasAnalysis &AA);
 
 // Left Value is a PHI-instr
 // Right Value is PHI.getOperand(bp) where bp is the predecessor of bm

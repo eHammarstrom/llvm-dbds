@@ -528,7 +528,6 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
     // instructions we look at.
     auto Limit = MD->getDefaultBlockScanLimit();
     while (InstDep.isDef() || InstDep.isClobber()) {
-      errs() << "In while\n";
       // Get the memory clobbered by the instruction we depend on.  MemDep will
       // skip any instructions that 'Loc' clearly doesn't interact with.  If we
       // end up depending on a may- or must-aliased load, then we can't optimize
@@ -581,8 +580,11 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
           break;
 
         errs() << "\tDSE AC: may remove,\n";
-        errs() << "this: ";
+        errs() << "\tthis: ";
         DepWrite->print(errs());
+        errs() << '\n';
+        errs() << "\tbecause of this: ";
+        I->print(errs());
         errs() << '\n';
 
         int64_t InstWriteOffset, DepWriteOffset;
@@ -590,40 +592,45 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
         dse::OverwriteResult OR = dse::isOverwrite(
             Loc, DepLoc, DL, *TLI, DepWriteOffset, InstWriteOffset, DepWrite,
             IOL, *AA, BB.getParent());
+        */
+        dse::OverwriteResult OR =
+            simplifiedIsOverwrite(Loc, DepLoc, DL, *TLI, DepWriteOffset,
+                                  InstWriteOffset, DepWrite, IOL, *AA);
+
         if (OR == dse::OW_Complete) {
-        */
+          errs() << "OW_Complete\n";
+          LLVM_DEBUG(dbgs() << "DSE: Remove Dead Store:\n  DEAD: " << *DepWrite
+                            << "\n  KILLER: " << *I << '\n');
 
-        LLVM_DEBUG(dbgs() << "DSE: Remove Dead Store:\n  DEAD: " << *DepWrite
-                          << "\n  KILLER: " << *I << '\n');
+          /*
+          // Delete the store and now-dead instructions that feed it.
+          deleteDeadInstruction(DepWrite, &BBI, *MD, *TLI, IOL, &InstrOrdering);
+          ++NumFastStores;
+          MadeChange = true;
+          */
 
-        /*
-        // Delete the store and now-dead instructions that feed it.
-        deleteDeadInstruction(DepWrite, &BBI, *MD, *TLI, IOL, &InstrOrdering);
-        ++NumFastStores;
-        MadeChange = true;
-        */
+          // Delete the store.
+          SimActions.push_back(new RemoveAction(TTI, DepWrite));
+          RemovedInst.insert(DepWrite);
 
-        // Delete the store.
-        SimActions.push_back(new RemoveAction(TTI, DepWrite));
-        RemovedInst.insert(DepWrite);
+          // We erased DepWrite; start over.
+          InstDep = MD->getDependency(I);
+          continue;
+        } else {
+          errs() << "OW_ELSE\n";
+          break;
+        }
 
-        // We erased DepWrite; start over.
-        InstDep = MD->getDependency(I);
-        continue;
-        // }
-      } else {
-        continue;
+        // If this block ends in a return, unwind, or unreachable, all allocas
+        // are dead at its end, which means stores to them are also dead.
+        if (ReturnInst *I = dyn_cast<ReturnInst>(*Instructions.end())) {
+          errs() << "DSE AC: block ends in ReturnInst\n";
+        }
+
+        // InstDep = MD->getPointerDependencyFrom(Loc, /*isLoad=*/false,
+        // DepWrite->getIterator(), &BB,
+        // /*QueryInst=*/nullptr, &Limit);
       }
-
-      // If this block ends in a return, unwind, or unreachable, all allocas are
-      // dead at its end, which means stores to them are also dead.
-      if (ReturnInst *I = dyn_cast<ReturnInst>(*Instructions.end())) {
-        errs() << "DSE AC: block ends in ReturnInst\n";
-      }
-
-      // InstDep = MD->getPointerDependencyFrom(Loc, /*isLoad=*/false,
-      // DepWrite->getIterator(), &BB,
-      // /*QueryInst=*/nullptr, &Limit);
     }
   }
 
@@ -631,3 +638,17 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
 }
 
 DeadStoreApplicabilityCheck::~DeadStoreApplicabilityCheck() {}
+
+dse::OverwriteResult blockduplicator::simplifiedIsOverwrite(
+    const MemoryLocation &Later, const MemoryLocation &Earlier,
+    const DataLayout &DL, const TargetLibraryInfo &TLI, int64_t &EarlierOff,
+    int64_t &LaterOff, Instruction *DepWrite, dse::InstOverlapIntervalsTy &IOL,
+    AliasAnalysis &AA) {
+  /*
+  if (Later.Size == MemoryLocation::UnknownSize ||
+      Earlier.Size == MemoryLocation::UnknownSize)
+    return dse::OW_Unknown;
+  */
+
+  return dse::OW_Unknown;
+}

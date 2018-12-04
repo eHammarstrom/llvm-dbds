@@ -1055,8 +1055,6 @@ static bool eliminateDeadStores(BasicBlock &BB, AliasAnalysis *AA,
   const DataLayout &DL = BB.getModule()->getDataLayout();
   bool MadeChange = false;
 
-  errs() << "\tRDSE: running!\n";
-
   // FIXME: Maybe change this to use some abstraction like OrderedBasicBlock?
   // The current OrderedBasicBlock can't deal with mutation at the moment.
   size_t LastThrowingInstIndex = 0;
@@ -1093,7 +1091,6 @@ static bool eliminateDeadStores(BasicBlock &BB, AliasAnalysis *AA,
     // eliminateNoopStore will update in iterator, if necessary.
     if (eliminateNoopStore(Inst, BBI, AA, MD, DL, TLI, IOL, &InstrOrdering)) {
       MadeChange = true;
-      errs() << "\tRDSE: Removed dead NOOP store\n";
       continue;
     }
 
@@ -1167,9 +1164,6 @@ static bool eliminateDeadStores(BasicBlock &BB, AliasAnalysis *AA,
       // to by the earlier one.
       if (isRemovable(DepWrite) &&
           !isPossibleSelfRead(Inst, Loc, DepWrite, *TLI, *AA)) {
-        errs() << "\tRDSE: found removable depwrite\n";
-        errs() << "here: ";
-        Inst-> print(errs());
         int64_t InstWriteOffset, DepWriteOffset;
         OverwriteResult OR = isOverwrite(Loc, DepLoc, DL, *TLI, DepWriteOffset,
                                          InstWriteOffset, DepWrite, IOL, *AA,
