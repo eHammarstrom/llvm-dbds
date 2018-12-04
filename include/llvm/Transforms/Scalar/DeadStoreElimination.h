@@ -19,6 +19,7 @@
 #define LLVM_TRANSFORMS_SCALAR_DEADSTOREELIMINATION_H
 
 #include "llvm/IR/PassManager.h"
+#include "llvm/Analysis/TargetLibraryInfo.h"
 
 namespace llvm {
 
@@ -30,6 +31,10 @@ class DSEPass : public PassInfoMixin<DSEPass> {
 public:
   PreservedAnalyses run(Function &F, FunctionAnalysisManager &FAM);
 };
+
+namespace dse {
+bool hasAnalyzableMemoryWrite(Instruction *I, const TargetLibraryInfo &TLI);
+}
 
 } // end namespace llvm
 

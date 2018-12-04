@@ -142,10 +142,6 @@ private:
   vector<SimulationAction *> Actions;
 };
 
-//===- BlockDuplicator helpers -===//
-
-bool hasAnalyzableMemoryWrite(Instruction *I, const TargetLibraryInfo &TLI);
-
 } // namespace blockduplicator
 } // namespace llvm
 
