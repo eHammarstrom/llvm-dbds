@@ -30,8 +30,8 @@ int main()
   int i;
   scanf("%d", &i); // 10
 
-  a = malloc(BUF_SIZE * sizeof(int));
-  b = malloc(BUF_SIZE * sizeof(int));
+  a = calloc(BUF_SIZE, sizeof(int));
+  b = calloc(BUF_SIZE, sizeof(int));
 
 
   memcpy(b, a, 20 * sizeof(int));
