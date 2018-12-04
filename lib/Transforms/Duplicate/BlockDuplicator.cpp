@@ -580,9 +580,9 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
         if (RemovedInst.find(DepWrite) != RemovedInst.end())
           break;
 
-        errs() << "\tDSE AC: found removable depwrite\n";
-        errs() << "here: ";
-        I->print(errs());
+        errs() << "\tDSE AC: may remove,\n";
+        errs() << "this: ";
+        DepWrite->print(errs());
         errs() << '\n';
 
         int64_t InstWriteOffset, DepWriteOffset;

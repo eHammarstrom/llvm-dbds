@@ -62,8 +62,12 @@ else
     cd $TEST_DIR
 
     for test_file in *.ll; do
-	# test_no_ext=${test_file%%.*}
+	test_no_ext=${test_file%%.*}
 	# OUT_FILE=$PROJECT_DIR/test_result/out_$test_no_ext.txt
+
+	echo ""
+	echo "*********** OPTIMIZING $test_no_ext ***********"
+	echo ""
 
 	$OPT -S \
 	     -o $PROJECT_DIR/test_result/$test_file \
@@ -88,7 +92,9 @@ else
     echo "0" > input0
     for test_file in *.ll; do
 	test_no_ext=${test_file%%.*}
-	echo "TESTING: $test_no_ext"
+	echo ""
+	echo "*********** TESTING: $test_no_ext ***********"
+	echo ""
 	llc $test_no_ext.ll
 	clang $test_no_ext.s -o $test_no_ext.e
 	clang -O3 $PROJECT_DIR/test_programs/$test_no_ext.c
