@@ -28,6 +28,8 @@
 
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/DependenceAnalysis.h"
+#include "llvm/Analysis/MemoryDependenceAnalysis.h"
+#include "llvm/Analysis/MemoryLocation.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/CFG.h"
@@ -43,8 +45,8 @@
 #include "llvm/Pass.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Transforms/Scalar/DeadStoreElimination.h"
 #include "llvm/Transforms/Duplicate/BlockDuplicator.h"
+#include "llvm/Transforms/Scalar/DeadStoreElimination.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 
@@ -76,6 +78,10 @@ struct DBDuplicationSimulation : public FunctionPass {
     AU.addRequired<DominatorTreeWrapperPass>();
     AU.addRequired<TargetTransformInfoWrapperPass>();
     AU.addRequired<TargetLibraryInfoWrapperPass>();
+    AU.addRequired<TargetLibraryInfoWrapperPass>();
+
+    AU.addRequired<MemoryDependenceWrapperPass>();
+    AU.addPreserved<MemoryDependenceWrapperPass>();
 
     // maybe?
     // AU.addRequired<DependenceAnalysisWrapperPass>();
@@ -101,6 +107,7 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
   auto &DT = getAnalysis<DominatorTreeWrapperPass>().getDomTree();
   auto &TTI = getAnalysis<TargetTransformInfoWrapperPass>().getTTI(F);
   auto &TLI = getAnalysis<TargetLibraryInfoWrapperPass>().getTLI();
+  auto &MD = getAnalysis<MemoryDependenceWrapperPass>().getMemDep();
 
   DT.print(errs());
 
@@ -143,7 +150,7 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
         */
 
         // Simulate duplication
-        Simulation *S = new Simulation(&TTI, &TLI, BB, BBSuccessor);
+        Simulation *S = new Simulation(&TTI, &TLI, &MD, BB, BBSuccessor);
         S->run();
 
         // Collect all simulations
@@ -258,12 +265,13 @@ bool ReplaceAction::apply(BasicBlock *NewBlock, InstructionMap IMap) {
 }
 
 Simulation::Simulation(const TargetTransformInfo *TTI,
-                       const TargetLibraryInfo *TLI, BasicBlock *bp,
+                       const TargetLibraryInfo *TLI,
+                       MemoryDependenceResults *MD, BasicBlock *bp,
                        BasicBlock *bm)
-    : TTI(TTI), TLI(TLI), BP(bp), BM(bm) {
+    : TTI(TTI), TLI(TLI), MD(MD), BP(bp), BM(bm) {
 
-  AC.push_back(new MemCpyApplicabilityCheck(TTI, TLI));
-  AC.push_back(new DeadStoreApplicabilityCheck(TTI, TLI));
+  AC.push_back(new MemCpyApplicabilityCheck(TTI, TLI, MD));
+  AC.push_back(new DeadStoreApplicabilityCheck(TTI, TLI, MD));
 
   for (BasicBlock::iterator I = BM->begin(); isa<PHINode>(I); ++I) {
     PHINode *PN = cast<PHINode>(I);
@@ -441,10 +449,26 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
   for (auto II = Instructions.begin(); II != Instructions.end(); ++II) {
     Instruction *I = *II;
 
+    // Check to see if Inst writes to memory.  If not, continue.
     if (!dse::hasAnalyzableMemoryWrite(I, *TLI))
       continue;
 
     errs() << "AnalyzableMemWrite\n";
+
+    // If we find something that writes memory, get its memory dependence.
+    MemDepResult InstDep = MD->getDependency(I);
+
+    // Ignore any store where we can't find a local dependence.
+    // FIXME: cross-block DSE would be fun. :)
+    if (!InstDep.isDef() && !InstDep.isClobber())
+      continue;
+
+    // Figure out what location is being stored to.
+    MemoryLocation Loc = dse::getLocForWrite(I);
+
+    // If we didn't get a useful location, fail.
+    if (!Loc.Ptr)
+      continue;
   }
 
   return SimActions;

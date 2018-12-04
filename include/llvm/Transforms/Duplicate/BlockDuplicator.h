@@ -79,8 +79,9 @@ private:
 class ApplicabilityCheck {
 public:
   ApplicabilityCheck(const TargetTransformInfo *TTI,
-                     const TargetLibraryInfo *TLI)
-      : TTI(TTI), TLI(TLI) {}
+                     const TargetLibraryInfo *TLI,
+                     MemoryDependenceResults *MD)
+      : TTI(TTI), TLI(TLI), MD(MD) {}
   virtual ~ApplicabilityCheck() = 0;
   // Returns the actions that should be taken to apply an optimization
   virtual vector<SimulationAction *> simulate(const SymbolMap,
@@ -89,6 +90,7 @@ public:
 protected:
   const TargetTransformInfo *TTI;
   const TargetLibraryInfo *TLI;
+  MemoryDependenceResults *MD;
 };
 
 // MemCpyOptimizer-like optimizations
@@ -96,7 +98,8 @@ class MemCpyApplicabilityCheck : public ApplicabilityCheck {
 public:
   using ApplicabilityCheck::ApplicabilityCheck;
   ~MemCpyApplicabilityCheck();
-  vector<SimulationAction *> simulate(const SymbolMap, const vector<Instruction *>);
+  vector<SimulationAction *> simulate(const SymbolMap,
+                                      const vector<Instruction *>);
 };
 
 // DeadStoreElimination-like optimizations
@@ -104,13 +107,14 @@ class DeadStoreApplicabilityCheck : public ApplicabilityCheck {
 public:
   using ApplicabilityCheck::ApplicabilityCheck;
   ~DeadStoreApplicabilityCheck();
-  vector<SimulationAction *> simulate(const SymbolMap, const vector<Instruction *>);
+  vector<SimulationAction *> simulate(const SymbolMap,
+                                      const vector<Instruction *>);
 };
 
 class Simulation {
 public:
   Simulation(const TargetTransformInfo *TTI, const TargetLibraryInfo *TLI,
-             BasicBlock *bp, BasicBlock *bm);
+             MemoryDependenceResults *MD, BasicBlock *bp, BasicBlock *bm);
   ~Simulation();
   void run();
   // The simulation benefit accounts for the cost of the duplication
@@ -124,6 +128,8 @@ private:
   const TargetTransformInfo *TTI;
   // Function usage info and more
   const TargetLibraryInfo *TLI;
+  // Memory dependence
+  MemoryDependenceResults *MD;
   // Duplicate BM, and merge inte BP
   InstructionMap mergeBlocks();
   // ApplicabilityChecks

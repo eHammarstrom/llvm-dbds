@@ -20,6 +20,7 @@
 
 #include "llvm/IR/PassManager.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
+#include "llvm/Analysis/MemoryLocation.h"
 
 namespace llvm {
 
@@ -34,6 +35,7 @@ public:
 
 namespace dse {
 bool hasAnalyzableMemoryWrite(Instruction *I, const TargetLibraryInfo &TLI);
+MemoryLocation getLocForWrite(Instruction *Inst);
 }
 
 } // end namespace llvm
