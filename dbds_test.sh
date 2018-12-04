@@ -11,6 +11,8 @@ TEST_DIR=$PROJECT_DIR/test/Transforms/Duplicate
 OPT=$PROJECT_DIR/../build/bin/opt
 
 # generate LLVM IR from test_programs
+rm -f test/Transforms/Duplicate/*
+
 cd $PROJECT_DIR/test_programs
 
 for test_prog in *.c; do
@@ -64,7 +66,7 @@ else
 	# OUT_FILE=$PROJECT_DIR/test_result/out_$test_no_ext.txt
 
 	$OPT -S \
-	     -o $PROJECT_DIR/test_result/dbds_$test_file \
+	     -o $PROJECT_DIR/test_result/$test_file \
 	     -load $PROJECT_DIR/../build/lib/LLVMBlockDuplicator.so \
 	     -O3 -simulator -simplifycfg -dot-dom -dot-cfg \
 	     < $test_file #&> OUT_FILE # redirect stdin and stderr to OUT_FILE
@@ -82,12 +84,20 @@ else
     # compile and run tests
     cd $PROJECT_DIR/test_result
 
-    echo "10" > input
+    echo "10" > input10
+    echo "0" > input0
     for test_file in *.ll; do
 	test_no_ext=${test_file%%.*}
+	echo "TESTING: $test_no_ext"
 	llc $test_no_ext.ll
 	clang $test_no_ext.s -o $test_no_ext.e
-	./$test_no_ext.e < input > $test_no_ext.output
+	clang -O3 $PROJECT_DIR/test_programs/$test_no_ext.c
+	./$test_no_ext.e < input10 > $test_no_ext.output10
+	./a.out < input10 > $test_no_ext.correct10
+	diff $test_no_ext.output10 $test_no_ext.correct10
+	./$test_no_ext.e < input0 > $test_no_ext.output0
+	./a.out < input0 > $test_no_ext.correct0
+	diff $test_no_ext.output10 $test_no_ext.correct10
     done
 
 fi
