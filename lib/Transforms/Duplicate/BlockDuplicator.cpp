@@ -24,13 +24,19 @@
 //===----------------------------------------------------------------------===//
 
 #include <algorithm>
+#include <unordered_set>
 #include <vector>
 
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/Analysis/AliasAnalysis.h"
+#include "llvm/Analysis/CaptureTracking.h"
 #include "llvm/Analysis/DependenceAnalysis.h"
+#include "llvm/Analysis/MemoryBuiltins.h"
 #include "llvm/Analysis/MemoryDependenceAnalysis.h"
 #include "llvm/Analysis/MemoryLocation.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
+#include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Dominators.h"
@@ -81,7 +87,11 @@ struct DBDuplicationSimulation : public FunctionPass {
     AU.addRequired<TargetLibraryInfoWrapperPass>();
 
     AU.addRequired<MemoryDependenceWrapperPass>();
-    AU.addPreserved<MemoryDependenceWrapperPass>();
+    // AU.addPreserved<MemoryDependenceWrapperPass>(); // do we actually
+    // preserve?
+
+    AU.addRequired<AAResultsWrapperPass>();
+    // AU.addPreserved<GlobalsAAWrapperPass>(); // do we actually preserve?
 
     // maybe?
     // AU.addRequired<DependenceAnalysisWrapperPass>();
@@ -108,6 +118,7 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
   auto &TTI = getAnalysis<TargetTransformInfoWrapperPass>().getTTI(F);
   auto &TLI = getAnalysis<TargetLibraryInfoWrapperPass>().getTLI();
   auto &MD = getAnalysis<MemoryDependenceWrapperPass>().getMemDep();
+  auto &AA = getAnalysis<AAResultsWrapperPass>().getAAResults();
 
   DT.print(errs());
 
@@ -150,7 +161,7 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
         */
 
         // Simulate duplication
-        Simulation *S = new Simulation(&TTI, &TLI, &MD, BB, BBSuccessor);
+        Simulation *S = new Simulation(&TTI, &TLI, &MD, &AA, BB, BBSuccessor);
         S->run();
 
         // Collect all simulations
@@ -213,7 +224,7 @@ int SimulationAction::getBenefit() {
 
 int SimulationAction::getCost() { return Cost; }
 
-AddAction::AddAction(TargetTransformInfo *TTI,
+AddAction::AddAction(const TargetTransformInfo *TTI,
                      pair<Instruction *, Instruction *> P)
     : ActionInst(P) {
   // TODO: calculate benefit/cost
@@ -229,7 +240,7 @@ bool AddAction::apply(BasicBlock *NewBlock, InstructionMap IMap) {
   return true; // there may be cases where we cannot apply an action
 }
 
-RemoveAction::RemoveAction(TargetTransformInfo *TTI, Instruction *I)
+RemoveAction::RemoveAction(const TargetTransformInfo *TTI, Instruction *I)
     : ActionInst(I) {
   // TODO: calculate benefit/cost
   // in this case it is only a benefit
@@ -248,7 +259,7 @@ bool RemoveAction::apply(BasicBlock *NewBlock, InstructionMap IMap) {
   return true;
 }
 
-ReplaceAction::ReplaceAction(TargetTransformInfo *TTI,
+ReplaceAction::ReplaceAction(const TargetTransformInfo *TTI,
                              pair<Instruction *, Instruction *> P)
     : ActionInst(P) {
   // TODO: calculate benefit/cost
@@ -266,12 +277,13 @@ bool ReplaceAction::apply(BasicBlock *NewBlock, InstructionMap IMap) {
 
 Simulation::Simulation(const TargetTransformInfo *TTI,
                        const TargetLibraryInfo *TLI,
-                       MemoryDependenceResults *MD, BasicBlock *bp,
-                       BasicBlock *bm)
-    : TTI(TTI), TLI(TLI), MD(MD), BP(bp), BM(bm) {
+                       MemoryDependenceResults *MD, AliasAnalysis *AA,
+                       BasicBlock *bp, BasicBlock *bm)
+    : TTI(TTI), TLI(TLI), MD(MD), AA(AA), BP(bp), BM(bm) {
+  Module *Mod = BP->getModule();
 
-  AC.push_back(new MemCpyApplicabilityCheck(TTI, TLI, MD));
-  AC.push_back(new DeadStoreApplicabilityCheck(TTI, TLI, MD));
+  AC.push_back(new MemCpyApplicabilityCheck(TTI, TLI, MD, AA, Mod));
+  AC.push_back(new DeadStoreApplicabilityCheck(TTI, TLI, MD, AA, Mod));
 
   for (BasicBlock::iterator I = BM->begin(); isa<PHINode>(I); ++I) {
     PHINode *PN = cast<PHINode>(I);
@@ -438,22 +450,56 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
 
 MemCpyApplicabilityCheck::~MemCpyApplicabilityCheck() {}
 
+/**
+ *
+ * This implementation of the DSE AC is using the
+ * same logic as DeadStoreElimination.cpp:eliminateDeadStores
+ *
+ */
 vector<SimulationAction *>
 DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
                                       vector<Instruction *> Instructions) {
-  vector<SimulationAction *> SimActions;
-
   errs() << "Performing DSE AC!\n";
 
-  // Reverse iterator to only save last memcpy
+  vector<SimulationAction *> SimActions;
+
+  unordered_set<Instruction *> RemovedInst;
+
+  // For DSE memory dependence analysis.
+  size_t LastThrowingInstIndex = 0;
+  DenseMap<Instruction *, size_t> InstrOrdering;
+  size_t InstrIndex = 1;
+
+  // Mod is the current compilation module
+  const DataLayout &DL = Mod->getDataLayout();
+
+  // A map of interval maps representing partially-overwritten value parts.
+  dse::InstOverlapIntervalsTy IOL;
+
   for (auto II = Instructions.begin(); II != Instructions.end(); ++II) {
     Instruction *I = *II;
+
+    // We don't handle free calls, DSE does,
+    // see DeadStoreElimination.cpp:eliminateDeadStores.
+    if (isFreeCall(I, TLI)) {
+      continue;
+    }
+
+    size_t CurInstNumber = InstrIndex++;
+    InstrOrdering.insert(std::make_pair(I, CurInstNumber));
+    if (I->mayThrow()) {
+      LastThrowingInstIndex = CurInstNumber;
+      continue;
+    }
 
     // Check to see if Inst writes to memory.  If not, continue.
     if (!dse::hasAnalyzableMemoryWrite(I, *TLI))
       continue;
 
     errs() << "AnalyzableMemWrite\n";
+    errs() << "here: ";
+    I->print(errs());
+    errs() << '\n';
 
     // If we find something that writes memory, get its memory dependence.
     MemDepResult InstDep = MD->getDependency(I);
@@ -463,12 +509,122 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
     if (!InstDep.isDef() && !InstDep.isClobber())
       continue;
 
+    errs() << "Found local dependence\n";
+
     // Figure out what location is being stored to.
     MemoryLocation Loc = dse::getLocForWrite(I);
 
     // If we didn't get a useful location, fail.
     if (!Loc.Ptr)
       continue;
+
+    errs() << "Before while\n";
+
+    // Loop until we find a store we can eliminate or a load that
+    // invalidates the analysis. Without an upper bound on the number of
+    // instructions examined, this analysis can become very time-consuming.
+    // However, the potential gain diminishes as we process more instructions
+    // without eliminating any of them. Therefore, we limit the number of
+    // instructions we look at.
+    auto Limit = MD->getDefaultBlockScanLimit();
+    while (InstDep.isDef() || InstDep.isClobber()) {
+      errs() << "In while\n";
+      // Get the memory clobbered by the instruction we depend on.  MemDep will
+      // skip any instructions that 'Loc' clearly doesn't interact with.  If we
+      // end up depending on a may- or must-aliased load, then we can't optimize
+      // away the store and we bail out.  However, if we depend on something
+      // that overwrites the memory location we *can* potentially optimize it.
+      //
+      // Find out what memory location the dependent instruction stores.
+      Instruction *DepWrite = InstDep.getInst();
+      if (!dse::hasAnalyzableMemoryWrite(DepWrite, *TLI))
+        break;
+      MemoryLocation DepLoc = dse::getLocForWrite(DepWrite);
+      // If we didn't get a useful location, or if it isn't a size, bail out.
+      if (!DepLoc.Ptr)
+        break;
+
+      // Make sure we don't look past a call which might throw. This is an
+      // issue because MemoryDependenceAnalysis works in the wrong direction:
+      // it finds instructions which dominate the current instruction, rather
+      // than instructions which are post-dominated by the current instruction.
+      //
+      // If the underlying object is a non-escaping memory allocation, any store
+      // to it is dead along the unwind edge. Otherwise, we need to preserve
+      // the store.
+      size_t DepIndex = InstrOrdering.lookup(DepWrite);
+      assert(DepIndex && "Unexpected instruction");
+      if (DepIndex <= LastThrowingInstIndex) {
+        const Value *Underlying = GetUnderlyingObject(DepLoc.Ptr, DL);
+        bool IsStoreDeadOnUnwind = isa<AllocaInst>(Underlying);
+        if (!IsStoreDeadOnUnwind) {
+          // We're looking for a call to an allocation function
+          // where the allocation doesn't escape before the last
+          // throwing instruction; PointerMayBeCaptured
+          // reasonably fast approximation.
+          IsStoreDeadOnUnwind = isAllocLikeFn(Underlying, TLI) &&
+                                !PointerMayBeCaptured(Underlying, false, true);
+        }
+        if (!IsStoreDeadOnUnwind)
+          break;
+      }
+
+      // If we find a write that is a) removable (i.e., non-volatile), b) is
+      // completely obliterated by the store to 'Loc', and c) which we know that
+      // 'Inst' doesn't load from, then we can remove it.
+      // Also try to merge two stores if a later one only touches memory written
+      // to by the earlier one.
+      if (dse::isRemovable(DepWrite) &&
+          !dse::isPossibleSelfRead(I, Loc, DepWrite, *TLI, *AA)) {
+
+        if (RemovedInst.find(DepWrite) != RemovedInst.end())
+          break;
+
+        errs() << "\tDSE AC: found removable depwrite\n";
+        errs() << "here: ";
+        I->print(errs());
+        errs() << '\n';
+
+        int64_t InstWriteOffset, DepWriteOffset;
+        /*
+        dse::OverwriteResult OR = dse::isOverwrite(
+            Loc, DepLoc, DL, *TLI, DepWriteOffset, InstWriteOffset, DepWrite,
+            IOL, *AA, BB.getParent());
+        if (OR == dse::OW_Complete) {
+        */
+
+        LLVM_DEBUG(dbgs() << "DSE: Remove Dead Store:\n  DEAD: " << *DepWrite
+                          << "\n  KILLER: " << *I << '\n');
+
+        /*
+        // Delete the store and now-dead instructions that feed it.
+        deleteDeadInstruction(DepWrite, &BBI, *MD, *TLI, IOL, &InstrOrdering);
+        ++NumFastStores;
+        MadeChange = true;
+        */
+
+        // Delete the store.
+        SimActions.push_back(new RemoveAction(TTI, DepWrite));
+        RemovedInst.insert(DepWrite);
+
+        // We erased DepWrite; start over.
+        InstDep = MD->getDependency(I);
+        continue;
+        // }
+      } else {
+        continue;
+      }
+
+      // If this block ends in a return, unwind, or unreachable, all allocas are
+      // dead at its end, which means stores to them are also dead.
+      if (ReturnInst *I = dyn_cast<ReturnInst>(*Instructions.end())) {
+        errs() << "DSE AC: block ends in ReturnInst\n";
+      }
+
+      // InstDep = MD->getPointerDependencyFrom(Loc, /*isLoad=*/false,
+      // DepWrite->getIterator(), &BB,
+      // /*QueryInst=*/nullptr, &Limit);
+    }
   }
 
   return SimActions;

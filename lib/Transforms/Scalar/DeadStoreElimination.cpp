@@ -88,8 +88,6 @@ EnablePartialStoreMerging("enable-dse-partial-store-merging",
 //===----------------------------------------------------------------------===//
 // Helper functions
 //===----------------------------------------------------------------------===//
-using OverlapIntervalsTy = std::map<int64_t, int64_t>;
-using InstOverlapIntervalsTy = DenseMap<Instruction *, OverlapIntervalsTy>;
 
 /// Delete this instruction.  Before we do, go through and zero out all the
 /// operands of this instruction.  If any of them become dead, delete them and
@@ -232,7 +230,7 @@ static MemoryLocation getLocForRead(Instruction *Inst,
 
 /// If the value of this instruction and the memory it writes to is unused, may
 /// we delete this instruction?
-static bool isRemovable(Instruction *I) {
+bool dse::isRemovable(Instruction *I) {
   // Don't remove volatile/atomic stores.
   if (StoreInst *SI = dyn_cast<StoreInst>(I))
     return SI->isUnordered();
@@ -321,18 +319,6 @@ static uint64_t getPointerSize(const Value *V, const DataLayout &DL,
   return MemoryLocation::UnknownSize;
 }
 
-namespace {
-
-enum OverwriteResult {
-  OW_Begin,
-  OW_Complete,
-  OW_End,
-  OW_PartialEarlierWithFullLater,
-  OW_Unknown
-};
-
-} // end anonymous namespace
-
 /// Return 'OW_Complete' if a store to the 'Later' location completely
 /// overwrites a store to the 'Earlier' location, 'OW_End' if the end of the
 /// 'Earlier' location is completely overwritten by 'Later', 'OW_Begin' if the
@@ -340,15 +326,12 @@ enum OverwriteResult {
 /// 'OW_PartialEarlierWithFullLater' means that an earlier (big) store was
 /// overwritten by a latter (smaller) store which doesn't write outside the big
 /// store's memory locations. Returns 'OW_Unknown' if nothing can be determined.
-static OverwriteResult isOverwrite(const MemoryLocation &Later,
-                                   const MemoryLocation &Earlier,
-                                   const DataLayout &DL,
-                                   const TargetLibraryInfo &TLI,
-                                   int64_t &EarlierOff, int64_t &LaterOff,
-                                   Instruction *DepWrite,
-                                   InstOverlapIntervalsTy &IOL,
-                                   AliasAnalysis &AA,
-                                   const Function *F) {
+OverwriteResult dse::isOverwrite(const MemoryLocation &Later,
+                            const MemoryLocation &Earlier, const DataLayout &DL,
+                            const TargetLibraryInfo &TLI, int64_t &EarlierOff,
+                            int64_t &LaterOff, Instruction *DepWrite,
+                            InstOverlapIntervalsTy &IOL, AliasAnalysis &AA,
+                            const Function *F) {
   // If we don't know the sizes of either access, then we can't do a comparison.
   if (Later.Size == MemoryLocation::UnknownSize ||
       Earlier.Size == MemoryLocation::UnknownSize)
@@ -535,7 +518,7 @@ static OverwriteResult isOverwrite(const MemoryLocation &Later,
 ///
 /// This function detects when it is unsafe to remove a dependent instruction
 /// because the DSE inducing instruction may be a self-read.
-static bool isPossibleSelfRead(Instruction *Inst,
+bool dse::isPossibleSelfRead(Instruction *Inst,
                                const MemoryLocation &InstStoreLoc,
                                Instruction *DepWrite,
                                const TargetLibraryInfo &TLI,
