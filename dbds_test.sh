@@ -7,9 +7,12 @@
 PROJECT_DIR=$(pwd)
 TEST_DIR=$PROJECT_DIR/test/Transforms/Duplicate
 
+# use built opt because of our lib mods
+OPT=$PROJECT_DIR/../build/bin/opt
+
 if [ "$1" == "stats" ]
 then
-    opt -debug-pass=Structure -S -o /dev/null -load ../build/lib/LLVMBlockDuplicator.so -O3 -simulator -simplifycfg -time-passes -stats < test/Transforms/Duplicate/memcpy_full_redundancies_O0.ll 2> out > /dev/null
+    $OPT -debug-pass=Structure -S -o /dev/null -load ../build/lib/LLVMBlockDuplicator.so -O3 -simulator -simplifycfg -time-passes -stats < test/Transforms/Duplicate/memcpy_full_redundancies_O0.ll 2> out > /dev/null
 
     if [ "$2" == "grep" ]
     then
@@ -37,11 +40,11 @@ else
 	# test_no_ext=${test_file%%.*}
 	# OUT_FILE=$PROJECT_DIR/test_result/out_$test_no_ext.txt
 
-	opt -S \
-	    -o $PROJECT_DIR/test_result/dbds_$test_file \
-	    -load $PROJECT_DIR/../build/lib/LLVMBlockDuplicator.so \
-	    -O3 -simulator -simplifycfg -dot-dom -dot-cfg \
-	    < $test_file #&> OUT_FILE # redirect stdin and stderr to OUT_FILE
+	$OPT -S \
+	     -o $PROJECT_DIR/test_result/dbds_$test_file \
+	     -load $PROJECT_DIR/../build/lib/LLVMBlockDuplicator.so \
+	     -O3 -simulator -simplifycfg -dot-dom -dot-cfg \
+	     < $test_file #&> OUT_FILE # redirect stdin and stderr to OUT_FILE
     done
 
     # produce graphs for all tests
