@@ -438,10 +438,55 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
 
   // Reverse iterator to only save last memcpy
   for (auto II = Instructions.begin(); II != Instructions.end(); ++II) {
-    // Instruction *I = *II;
+    Instruction *I = *II;
+
+    if (!hasAnalyzableMemoryWrite(I, *TLI))
+      continue;
+
+    errs() << "AnalyzableMemWrite\n";
   }
 
   return SimActions;
 }
 
 DeadStoreApplicabilityCheck::~DeadStoreApplicabilityCheck() {}
+
+//===- BlockDuplicator helpers -===//
+
+/// Does this instruction write some memory?  This only returns true for things
+/// that we can analyze with other helpers below.
+bool
+blockduplicator::hasAnalyzableMemoryWrite(Instruction *I,
+                         const TargetLibraryInfo &TLI) {
+  if (isa<StoreInst>(I))
+    return true;
+  if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(I)) {
+    switch (II->getIntrinsicID()) {
+    default:
+      return false;
+    case Intrinsic::memset:
+    case Intrinsic::memmove:
+    case Intrinsic::memcpy:
+    case Intrinsic::memcpy_element_unordered_atomic:
+    case Intrinsic::memmove_element_unordered_atomic:
+    case Intrinsic::memset_element_unordered_atomic:
+    case Intrinsic::init_trampoline:
+    case Intrinsic::lifetime_end:
+      return true;
+    }
+  }
+  if (auto CS = CallSite(I)) {
+    if (Function *F = CS.getCalledFunction()) {
+      StringRef FnName = F->getName();
+      if (TLI.has(LibFunc_strcpy) && FnName == TLI.getName(LibFunc_strcpy))
+        return true;
+      if (TLI.has(LibFunc_strncpy) && FnName == TLI.getName(LibFunc_strncpy))
+        return true;
+      if (TLI.has(LibFunc_strcat) && FnName == TLI.getName(LibFunc_strcat))
+        return true;
+      if (TLI.has(LibFunc_strncat) && FnName == TLI.getName(LibFunc_strncat))
+        return true;
+    }
+  }
+  return false;
+}

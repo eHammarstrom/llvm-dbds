@@ -86,7 +86,7 @@ public:
   virtual vector<SimulationAction *> simulate(const SymbolMap,
                                               const vector<Instruction *>) = 0;
 
-private:
+protected:
   const TargetTransformInfo *TTI;
   const TargetLibraryInfo *TLI;
 };
@@ -141,6 +141,10 @@ private:
   // into its optimized equivalent.
   vector<SimulationAction *> Actions;
 };
+
+//===- BlockDuplicator helpers -===//
+
+bool hasAnalyzableMemoryWrite(Instruction *I, const TargetLibraryInfo &TLI);
 
 } // namespace blockduplicator
 } // namespace llvm
