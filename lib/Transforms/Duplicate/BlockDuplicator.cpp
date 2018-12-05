@@ -161,7 +161,8 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
         */
 
         // Simulate duplication
-        Simulation *S = new Simulation(&TTI, &TLI, &MD, &AA, BB, BBSuccessor);
+        Simulation *S =
+            new Simulation(&TTI, &TLI, &MD, &AA, &F, BB, BBSuccessor);
         S->run();
 
         // Collect all simulations
@@ -278,12 +279,12 @@ bool ReplaceAction::apply(BasicBlock *NewBlock, InstructionMap IMap) {
 Simulation::Simulation(const TargetTransformInfo *TTI,
                        const TargetLibraryInfo *TLI,
                        MemoryDependenceResults *MD, AliasAnalysis *AA,
-                       BasicBlock *bp, BasicBlock *bm)
+                       Function *F, BasicBlock *bp, BasicBlock *bm)
     : TTI(TTI), TLI(TLI), MD(MD), AA(AA), BP(bp), BM(bm) {
   Module *Mod = BP->getModule();
 
-  AC.push_back(new MemCpyApplicabilityCheck(TTI, TLI, MD, AA, Mod));
-  AC.push_back(new DeadStoreApplicabilityCheck(TTI, TLI, MD, AA, Mod));
+  AC.push_back(new MemCpyApplicabilityCheck(TTI, TLI, MD, AA, Mod, F));
+  AC.push_back(new DeadStoreApplicabilityCheck(TTI, TLI, MD, AA, Mod, F));
 
   for (BasicBlock::iterator I = BM->begin(); isa<PHINode>(I); ++I) {
     PHINode *PN = cast<PHINode>(I);
@@ -476,43 +477,43 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
   // A map of interval maps representing partially-overwritten value parts.
   dse::InstOverlapIntervalsTy IOL;
 
-  for (auto II = Instructions.begin(); II != Instructions.end(); ++II) {
-    Instruction *I = *II;
+  for (auto IIA = Instructions.rbegin(); IIA != Instructions.rend(); ++IIA) {
+    Instruction *IA = *IIA;
 
     // We don't handle free calls, DSE does,
     // see DeadStoreElimination.cpp:eliminateDeadStores.
-    if (isFreeCall(I, TLI)) {
+    if (isFreeCall(IA, TLI)) {
       continue;
     }
 
     size_t CurInstNumber = InstrIndex++;
-    InstrOrdering.insert(std::make_pair(I, CurInstNumber));
-    if (I->mayThrow()) {
+    InstrOrdering.insert(std::make_pair(IA, CurInstNumber));
+    if (IA->mayThrow()) {
       LastThrowingInstIndex = CurInstNumber;
       continue;
     }
 
     // Check to see if Inst writes to memory.  If not, continue.
-    if (!dse::hasAnalyzableMemoryWrite(I, *TLI))
+    if (!dse::hasAnalyzableMemoryWrite(IA, *TLI))
       continue;
 
     errs() << "AnalyzableMemWrite\n";
     errs() << "here: ";
-    I->print(errs());
+    IA->print(errs());
     errs() << '\n';
 
     // If we find something that writes memory, get its memory dependence.
-    MemDepResult InstDep = MD->getDependency(I);
+    // MemDepResult InstDep = MD->getDependency(IA);
 
     // Ignore any store where we can't find a local dependence.
     // FIXME: cross-block DSE would be fun. :)
+    /*
     if (!InstDep.isDef() && !InstDep.isClobber())
       continue;
-
-    errs() << "Found local dependence\n";
+    */
 
     // Figure out what location is being stored to.
-    MemoryLocation Loc = dse::getLocForWrite(I);
+    MemoryLocation Loc = dse::getLocForWrite(IA);
 
     // If we didn't get a useful location, fail.
     if (!Loc.Ptr)
@@ -520,28 +521,25 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
 
     errs() << "Before while\n";
 
-    // Loop until we find a store we can eliminate or a load that
-    // invalidates the analysis. Without an upper bound on the number of
-    // instructions examined, this analysis can become very time-consuming.
-    // However, the potential gain diminishes as we process more instructions
-    // without eliminating any of them. Therefore, we limit the number of
-    // instructions we look at.
-    auto Limit = MD->getDefaultBlockScanLimit();
-    while (InstDep.isDef() || InstDep.isClobber()) {
+    // Loop until we find a store we can eliminate
+    for (auto IIB = IIA + 1; IIB != Instructions.rend(); ++IIB) {
       // Get the memory clobbered by the instruction we depend on.  MemDep will
       // skip any instructions that 'Loc' clearly doesn't interact with.  If we
       // end up depending on a may- or must-aliased load, then we can't optimize
       // away the store and we bail out.  However, if we depend on something
       // that overwrites the memory location we *can* potentially optimize it.
-      //
+
       // Find out what memory location the dependent instruction stores.
-      Instruction *DepWrite = InstDep.getInst();
+      // Instruction *DepWrite = InstDep.getInst();
+      Instruction *DepWrite = *IIB;
       if (!dse::hasAnalyzableMemoryWrite(DepWrite, *TLI))
-        break;
+        continue;
+      errs() << "Before while2\n";
       MemoryLocation DepLoc = dse::getLocForWrite(DepWrite);
       // If we didn't get a useful location, or if it isn't a size, bail out.
       if (!DepLoc.Ptr)
-        break;
+        continue;
+      errs() << "Before while3\n";
 
       // Make sure we don't look past a call which might throw. This is an
       // issue because MemoryDependenceAnalysis works in the wrong direction:
@@ -551,6 +549,7 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
       // If the underlying object is a non-escaping memory allocation, any store
       // to it is dead along the unwind edge. Otherwise, we need to preserve
       // the store.
+      /*
       size_t DepIndex = InstrOrdering.lookup(DepWrite);
       assert(DepIndex && "Unexpected instruction");
       if (DepIndex <= LastThrowingInstIndex) {
@@ -565,8 +564,9 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
                                 !PointerMayBeCaptured(Underlying, false, true);
         }
         if (!IsStoreDeadOnUnwind)
-          break;
+          continue;
       }
+      */
 
       // If we find a write that is a) removable (i.e., non-volatile), b) is
       // completely obliterated by the store to 'Loc', and c) which we know that
@@ -574,34 +574,33 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
       // Also try to merge two stores if a later one only touches memory written
       // to by the earlier one.
       if (dse::isRemovable(DepWrite) &&
-          !dse::isPossibleSelfRead(I, Loc, DepWrite, *TLI, *AA)) {
+          !dse::isPossibleSelfRead(IA, Loc, DepWrite, *TLI, *AA)) {
 
         if (RemovedInst.find(DepWrite) != RemovedInst.end())
-          break;
+          continue;
 
         errs() << "\tDSE AC: may remove,\n";
         errs() << "\tthis: ";
         DepWrite->print(errs());
         errs() << '\n';
         errs() << "\tbecause of this: ";
-        I->print(errs());
+        IA->print(errs());
         errs() << '\n';
 
         int64_t InstWriteOffset, DepWriteOffset;
-        /*
+
         dse::OverwriteResult OR = dse::isOverwrite(
             Loc, DepLoc, DL, *TLI, DepWriteOffset, InstWriteOffset, DepWrite,
-            IOL, *AA, BB.getParent());
-        */
+            IOL, *AA, F);
+
+        /*
         dse::OverwriteResult OR =
             simplifiedIsOverwrite(Loc, DepLoc, DL, *TLI, DepWriteOffset,
                                   InstWriteOffset, DepWrite, IOL, *AA);
+        */
 
         if (OR == dse::OW_Complete) {
           errs() << "OW_Complete\n";
-          LLVM_DEBUG(dbgs() << "DSE: Remove Dead Store:\n  DEAD: " << *DepWrite
-                            << "\n  KILLER: " << *I << '\n');
-
           /*
           // Delete the store and now-dead instructions that feed it.
           deleteDeadInstruction(DepWrite, &BBI, *MD, *TLI, IOL, &InstrOrdering);
@@ -614,9 +613,17 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
           RemovedInst.insert(DepWrite);
 
           // We erased DepWrite; start over.
-          InstDep = MD->getDependency(I);
+          // InstDep = MD->getDependency(I);
           continue;
-        } else {
+        } else if (OR == dse::OW_Begin) {
+          errs() << "OW_Begin\n";
+        } else if (OR == dse::OW_End) {
+          errs() << "OW_End\n";
+        } else if (OR == dse::OW_PartialEarlierWithFullLater) {
+          errs() << "OW_PartialEarlierWithFullLater\n";
+        } else {}
+
+        /* else {
           errs() << "OW_ELSE\n";
           break;
         }
@@ -626,6 +633,23 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
         if (ReturnInst *I = dyn_cast<ReturnInst>(*Instructions.end())) {
           errs() << "DSE AC: block ends in ReturnInst\n";
         }
+
+        // If this is a may-aliased store that is clobbering the store value, we
+        // can keep searching past it for another must-aliased pointer that
+        // stores to the same location.  For example, in:
+        //   store -> P
+        //   store -> Q
+        //   store -> P
+        // we can remove the first store to P even though we don't know if P and
+        // Q alias.
+        if (DepWrite == Instructions.front())
+          break;
+
+        // Can't look past this instruction if it might read 'Loc'.
+        if (isRefSet(AA->getModRefInfo(DepWrite, Loc)))
+          break;
+
+         */
 
         // InstDep = MD->getPointerDependencyFrom(Loc, /*isLoad=*/false,
         // DepWrite->getIterator(), &BB,
@@ -638,17 +662,3 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
 }
 
 DeadStoreApplicabilityCheck::~DeadStoreApplicabilityCheck() {}
-
-dse::OverwriteResult blockduplicator::simplifiedIsOverwrite(
-    const MemoryLocation &Later, const MemoryLocation &Earlier,
-    const DataLayout &DL, const TargetLibraryInfo &TLI, int64_t &EarlierOff,
-    int64_t &LaterOff, Instruction *DepWrite, dse::InstOverlapIntervalsTy &IOL,
-    AliasAnalysis &AA) {
-  /*
-  if (Later.Size == MemoryLocation::UnknownSize ||
-      Earlier.Size == MemoryLocation::UnknownSize)
-    return dse::OW_Unknown;
-  */
-
-  return dse::OW_Unknown;
-}

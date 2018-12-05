@@ -47,6 +47,8 @@ enum OverwriteResult {
   OW_Unknown
 };
 
+uint64_t getPointerSize(const Value *V, const DataLayout &DL,
+                        const TargetLibraryInfo &TLI, const Function *F);
 bool hasAnalyzableMemoryWrite(Instruction *I, const TargetLibraryInfo &TLI);
 MemoryLocation getLocForWrite(Instruction *Inst);
 bool isRemovable(Instruction *I);
