@@ -523,6 +523,7 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
 
     // Loop until we find a store we can eliminate
     for (auto IIB = IIA + 1; IIB != Instructions.rend(); ++IIB) {
+
       // Get the memory clobbered by the instruction we depend on.  MemDep will
       // skip any instructions that 'Loc' clearly doesn't interact with.  If we
       // end up depending on a may- or must-aliased load, then we can't optimize
@@ -532,8 +533,18 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
       // Find out what memory location the dependent instruction stores.
       // Instruction *DepWrite = InstDep.getInst();
       Instruction *DepWrite = *IIB;
+
+      // Can't look past this instruction if it might read 'Loc'.
+      if (isRefSet(AA->getModRefInfo(DepWrite, Loc))) {
+        errs() << "\tInst: ";
+        DepWrite->print(errs());
+        errs() << "\n\tMight read our mem loc\n";
+        break;
+      }
+
       if (!dse::hasAnalyzableMemoryWrite(DepWrite, *TLI))
         continue;
+
       errs() << "Before while2\n";
       MemoryLocation DepLoc = dse::getLocForWrite(DepWrite);
       // If we didn't get a useful location, or if it isn't a size, bail out.
