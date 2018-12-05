@@ -77,11 +77,24 @@ else
 	     -O3 -simulator -simplifycfg -dot-dom -dot-cfg \
 	     < $test_file #&> OUT_FILE # redirect stdin and stderr to OUT_FILE
 
-	# produce graphs
+	# produce AFTER graphs
 	for dot_file in *.dot; do
 	    [ -f "$dot_file" ] || break
-	    dot -Tps $dot_file -o $test_no_ext$dot_file.ps
-	    mv $test_no_ext$dot_file.ps $PROJECT_DIR/graphs/
+	    dot -Tps $dot_file -o AFTER.$test_no_ext$dot_file.ps
+	    mv AFTER.$test_no_ext$dot_file.ps $PROJECT_DIR/graphs/
+	    rm $dot_file
+	done
+
+	$OPT -S \
+	     -o /dev/null \
+	     -dot-dom -dot-cfg \
+	     < $test_file #&> OUT_FILE # redirect stdin and stderr to OUT_FILE
+
+	# produce BEFORE graphs
+	for dot_file in *.dot; do
+	    [ -f "$dot_file" ] || break
+	    dot -Tps $dot_file -o BEFORE.$test_no_ext$dot_file.ps
+	    mv BEFORE.$test_no_ext$dot_file.ps $PROJECT_DIR/graphs/
 	    rm $dot_file
 	done
     done
