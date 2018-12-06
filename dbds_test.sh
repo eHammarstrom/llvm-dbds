@@ -61,6 +61,8 @@ else
     # optimize all test IR
     cd $TEST_DIR
 
+    mkdir $PROJECT_DIR/graphs
+
     for test_file in *.ll; do
 	test_no_ext=${test_file%%.*}
 	# OUT_FILE=$PROJECT_DIR/test_result/out_$test_no_ext.txt
@@ -74,16 +76,30 @@ else
 	     -load $PROJECT_DIR/../build/lib/LLVMBlockDuplicator.so \
 	     -O3 -simulator -simplifycfg -dot-dom -dot-cfg \
 	     < $test_file #&> OUT_FILE # redirect stdin and stderr to OUT_FILE
+
+	# produce AFTER graphs
+	for dot_file in *.dot; do
+	    [ -f "$dot_file" ] || break
+	    dot -Tps $dot_file -o AFTER.$test_no_ext$dot_file.ps
+	    mv AFTER.$test_no_ext$dot_file.ps $PROJECT_DIR/graphs/
+	    rm $dot_file
+	done
+
+	$OPT -S \
+	     -o /dev/null \
+	     -dot-dom -dot-cfg \
+	     < $test_file #&> OUT_FILE # redirect stdin and stderr to OUT_FILE
+
+	# produce BEFORE graphs
+	for dot_file in *.dot; do
+	    [ -f "$dot_file" ] || break
+	    dot -Tps $dot_file -o BEFORE.$test_no_ext$dot_file.ps
+	    mv BEFORE.$test_no_ext$dot_file.ps $PROJECT_DIR/graphs/
+	    rm $dot_file
+	done
     done
 
-    # produce graphs for all tests
-    mkdir $PROJECT_DIR/graphs
-    for dot_file in *.dot; do
-	[ -f "$dot_file" ] || break
-	dot -Tps $dot_file -o $dot_file.ps
-	mv $dot_file.ps $PROJECT_DIR/graphs/
-	rm $dot_file
-    done
+
 
     # compile and run tests
     cd $PROJECT_DIR/test_result
@@ -103,7 +119,7 @@ else
 	diff $test_no_ext.output10 $test_no_ext.correct10
 	./$test_no_ext.e < input0 > $test_no_ext.output0
 	./a.out < input0 > $test_no_ext.correct0
-	diff $test_no_ext.output10 $test_no_ext.correct10
+	diff $test_no_ext.output0 $test_no_ext.correct0
     done
 
 fi

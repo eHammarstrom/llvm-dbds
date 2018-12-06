@@ -307,7 +307,7 @@ static Value *getStoredPointerOperand(Instruction *I) {
   return const_cast<Value*>(Loc.Ptr);
 }
 
-static uint64_t getPointerSize(const Value *V, const DataLayout &DL,
+uint64_t dse::getPointerSize(const Value *V, const DataLayout &DL,
                                const TargetLibraryInfo &TLI,
                                const Function *F) {
   uint64_t Size;

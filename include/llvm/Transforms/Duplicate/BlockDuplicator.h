@@ -30,13 +30,6 @@ namespace blockduplicator {
 
 using namespace std;
 
-dse::OverwriteResult
-simplifiedIsOverwrite(const MemoryLocation &Later,
-                      const MemoryLocation &Earlier, const DataLayout &DL,
-                      const TargetLibraryInfo &TLI, int64_t &EarlierOff,
-                      int64_t &LaterOff, Instruction *DepWrite,
-                      dse::InstOverlapIntervalsTy &IOL, AliasAnalysis &AA);
-
 // Left Value is a PHI-instr
 // Right Value is PHI.getOperand(bp) where bp is the predecessor of bm
 using SymbolMap = map<Value *, Value *>;
@@ -90,8 +83,8 @@ class ApplicabilityCheck {
 public:
   ApplicabilityCheck(const TargetTransformInfo *TTI,
                      const TargetLibraryInfo *TLI, MemoryDependenceResults *MD,
-                     AliasAnalysis *AA, Module *Mod)
-      : TTI(TTI), TLI(TLI), MD(MD), Mod(Mod) {}
+                     AliasAnalysis *AA, Module *Mod, Function *F)
+      : TTI(TTI), TLI(TLI), MD(MD), AA(AA), Mod(Mod), F(F) {}
   virtual ~ApplicabilityCheck() = 0;
   // Returns the actions that should be taken to apply an optimization
   virtual vector<SimulationAction *> simulate(const SymbolMap,
@@ -103,6 +96,7 @@ protected:
   MemoryDependenceResults *MD;
   AliasAnalysis *AA;
   Module *Mod;
+  Function *F;
 };
 
 // MemCpyOptimizer-like optimizations
@@ -126,7 +120,7 @@ public:
 class Simulation {
 public:
   Simulation(const TargetTransformInfo *TTI, const TargetLibraryInfo *TLI,
-             MemoryDependenceResults *MD, AliasAnalysis *AA, BasicBlock *bp,
+             MemoryDependenceResults *MD, AliasAnalysis *AA, Function *F, BasicBlock *bp,
              BasicBlock *bm);
   ~Simulation();
   void run();
