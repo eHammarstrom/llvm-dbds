@@ -604,67 +604,21 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
             Loc, DepLoc, DL, *TLI, DepWriteOffset, InstWriteOffset, DepWrite,
             IOL, *AA, F);
 
-        /*
-        dse::OverwriteResult OR =
-            simplifiedIsOverwrite(Loc, DepLoc, DL, *TLI, DepWriteOffset,
-                                  InstWriteOffset, DepWrite, IOL, *AA);
-        */
-
         if (OR == dse::OW_Complete) {
           errs() << "OW_Complete\n";
-          /*
-          // Delete the store and now-dead instructions that feed it.
-          deleteDeadInstruction(DepWrite, &BBI, *MD, *TLI, IOL, &InstrOrdering);
-          ++NumFastStores;
-          MadeChange = true;
-          */
-
           // Delete the store.
           SimActions.push_back(new RemoveAction(TTI, DepWrite));
           RemovedInst.insert(DepWrite);
-
-          // We erased DepWrite; start over.
-          // InstDep = MD->getDependency(I);
-          continue;
         } else if (OR == dse::OW_Begin) {
           errs() << "OW_Begin\n";
+          // TODO
         } else if (OR == dse::OW_End) {
           errs() << "OW_End\n";
+          // TODO
         } else if (OR == dse::OW_PartialEarlierWithFullLater) {
           errs() << "OW_PartialEarlierWithFullLater\n";
-        } else {}
-
-        /* else {
-          errs() << "OW_ELSE\n";
-          break;
+          // TODO
         }
-
-        // If this block ends in a return, unwind, or unreachable, all allocas
-        // are dead at its end, which means stores to them are also dead.
-        if (ReturnInst *I = dyn_cast<ReturnInst>(*Instructions.end())) {
-          errs() << "DSE AC: block ends in ReturnInst\n";
-        }
-
-        // If this is a may-aliased store that is clobbering the store value, we
-        // can keep searching past it for another must-aliased pointer that
-        // stores to the same location.  For example, in:
-        //   store -> P
-        //   store -> Q
-        //   store -> P
-        // we can remove the first store to P even though we don't know if P and
-        // Q alias.
-        if (DepWrite == Instructions.front())
-          break;
-
-        // Can't look past this instruction if it might read 'Loc'.
-        if (isRefSet(AA->getModRefInfo(DepWrite, Loc)))
-          break;
-
-         */
-
-        // InstDep = MD->getPointerDependencyFrom(Loc, /*isLoad=*/false,
-        // DepWrite->getIterator(), &BB,
-        // /*QueryInst=*/nullptr, &Limit);
       }
     }
   }
