@@ -330,36 +330,46 @@ InstructionMap Simulation::mergeBlocks() {
   // Remove branch to BM in BP
   BP->getInstList().pop_back();
 
-  // Add BM DUPLICATED instructions to BP if
-  // there exist no SimulationAction for it
-  // else use the SimulationAction
-  // And for all instructions -- provide a mapping
-  // even if it is to itself.
+  // Provide a mapping from all instructions to themselves
+  // in the predecessor block.
   for (auto II = BP->begin(); II != BP->end(); ++II) {
     Instruction *I = cast<Instruction>(II);
     IMap.insert(pair<Instruction *, Instruction *>(I, I));
   }
 
+  // Provide a mapping from all instructions to themselves
+  // in the merge block. Move them to the predecessor block.
+  // And reduce their PHI-usages.
   for (auto II = BM->begin(); II != BM->end(); ++II) {
     Instruction *I = cast<Instruction>(II);
+
+    // Here we peek into the map using the old instruction I
+    // because the PHITranslation was done in the original block
+    PHINode *PNC = dyn_cast<PHINode>(I);
+    if (PNC)
+      continue;
+
+    // Clone instruction in merge block
     Instruction *ClonedInstruction = I->clone();
 
+    // Create a synonym from old merge block instruction to newly cloned
+    // instruction
     IMap.insert(pair<Instruction *, Instruction *>(I, ClonedInstruction));
 
-    PHINode *PNC = dyn_cast<PHINode>(ClonedInstruction);
-    if (PNC) {
-      // Only insert PHI-function if we don't have a mapping to a concrete Value
-      if (PHITranslation.find(PNC) == PHITranslation.end())
-        BP->getInstList().insert(BP->begin(), ClonedInstruction);
-    } else {
-      BP->getInstList().insert(BP->end(), ClonedInstruction);
-    }
-  }
+    // Insert the newly cloned instruction at the end of predecessor block
+    BP->getInstList().insert(BP->end(), ClonedInstruction);
 
-  // Replace all uses of the removed PHI-functions
-  // with the new concrete Value.
-  for (auto &KV : PHITranslation) {
-    KV.first->replaceAllUsesWith(KV.second);
+    // Replace all PHI uses with the Value mappings in the PHITranslation map
+    for (unsigned IOP = 0; IOP < ClonedInstruction->getNumOperands(); ++IOP) {
+      Value *OP = ClonedInstruction->getOperand(IOP);
+
+      // If we have no translation, continue
+      if (PHITranslation.find(OP) == PHITranslation.end())
+        continue;
+
+      // Replace PHI usage with concrete Value translation
+      ClonedInstruction->replaceUsesOfWith(OP, PHITranslation[OP]);
+    }
   }
 
   return IMap;
@@ -600,9 +610,9 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
 
         int64_t InstWriteOffset, DepWriteOffset;
 
-        dse::OverwriteResult OR = dse::isOverwrite(
-            Loc, DepLoc, DL, *TLI, DepWriteOffset, InstWriteOffset, DepWrite,
-            IOL, *AA, F);
+        dse::OverwriteResult OR =
+            dse::isOverwrite(Loc, DepLoc, DL, *TLI, DepWriteOffset,
+                             InstWriteOffset, DepWrite, IOL, *AA, F);
 
         if (OR == dse::OW_Complete) {
           errs() << "OW_Complete\n";
