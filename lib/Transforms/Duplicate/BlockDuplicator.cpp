@@ -410,8 +410,29 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
       // unchanged(b)
       // A = memcpy(c <- b, y)
       // transform(A, memcpy(c <- a, y))
+      /*
+        Will create a memcpyInstruction in the basic block of the the currrent
+        instruction and the unlink it from the basic block.
+        TODO: Find better way to create new Instruction
+      */
       if (MemCpyA->getSource() == MemCpyB->getDest()) {
         // TODO: see comment above
+        Value *Dest = MemCpyA->getRawDest();
+        Value *Src = MemCpyB->getRawDest();
+        Value *CpyLen = MemCpyA->getLength();
+
+        IRBuilder<> Builder(MemCpyA);
+        auto MemCpyI = Builder.CreateMemCpy(
+                Dest, MemCpyA->getDestAlignment(),
+                Src, MemCpyB->getSourceAlignment(),
+                CpyLen);
+
+        MemCpyI->removeFromParent();
+        ReplaceAction *RA = new ReplaceAction(TTI,
+                std::pair<Instruction*, Instruction*>(MemCpyB, MemCpyI));
+        SimActions.push_back(RA);
+
+        continue;
       }
 
       // Optimization after this point needs both copy lengths
@@ -439,8 +460,33 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
       // B = memcpy(b <- a, 12)
       // A = memcpy(b <- a, 10)
       // transform(B, memcpy((b+10) <- (a+10), 2))
+      /*
+        Will create a memcpyInstruction in the basic block of the the currrent
+        instruction and the unlink it from the basic block.
+        TODO: Find better way to create new Instruction
+      */
       if (CpySizeA->getZExtValue() < CpySizeB->getZExtValue()) {
         // TODO: see comment above
+        Value *Dest = MemCpyB->getRawDest();
+        Value *Src = MemCpyA->getRawDest();
+        Value *DestSize = MemCpyB->getLength();
+        Value *SrcSize = MemCpyA->getLength();
+
+        IRBuilder<> Builder(MemCpyB);
+        Value *SizeDiff = Builder.CreateSub(DestSize, SrcSize);
+        Value *Ule = Builder.CreateICmpULE(DestSize, SrcSize);
+        Value *NewCpyLen = Builder.CreateSelect(
+                Ule, ConstantInt::getNullValue(DestSize->getType()), SizeDiff);
+
+        auto MemCpyI = Builder.CreateMemCpy(
+                Builder.CreateGEP(Dest, SrcSize), MemCpyB->getDestAlignment(),
+                Builder.CreateGEP(Src, SrcSize), MemCpyA->getSourceAlignment(),
+                NewCpyLen);
+
+        MemCpyI->removeFromParent();
+        ReplaceAction *RA = new ReplaceAction(TTI,
+                std::pair<Instruction*, Instruction*>(MemCpyB, MemCpyI));
+        SimActions.push_back(RA);
       }
     }
   }
