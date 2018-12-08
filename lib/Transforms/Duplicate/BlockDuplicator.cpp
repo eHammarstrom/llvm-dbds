@@ -459,7 +459,7 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
         // get a standalone instruction
         MemCpyI->removeFromParent();
         ReplaceAction *RA = new ReplaceAction(TTI,
-                std::pair<Instruction*, Instruction*>(MemCpyB, MemCpyI));
+                std::pair<Instruction*, Instruction*>(MemCpyA, MemCpyI));
         SimActions.push_back(RA);
 
         errs() << "\tMCO AC: may replace,\n";
