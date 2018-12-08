@@ -455,6 +455,8 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
                 Src, MemCpyB->getSourceAlignment(),
                 CpyLen);
 
+        // remove the newly created instruction the block to
+        // get a standalone instruction
         MemCpyI->removeFromParent();
         ReplaceAction *RA = new ReplaceAction(TTI,
                 std::pair<Instruction*, Instruction*>(MemCpyB, MemCpyI));
@@ -506,7 +508,7 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
         errs() << "Found memcpy with longer length\n";
 
         Value *Dest = MemCpyA->getRawDest();
-        Value *Src = MemCpyA->getRawDest();
+        Value *Src = MemCpyA->getRawSource();
         Value *DestSize = MemCpyA->getLength();
         Value *SrcSize = MemCpyB->getLength();
 
@@ -521,6 +523,8 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
                 Builder.CreateGEP(Src, SrcSize), MemCpyA->getSourceAlignment(),
                 NewCpyLen);
 
+        // remove the newly created instruction the block to
+        // get a standalone instruction
         MemCpyI->removeFromParent();
         ReplaceAction *RA = new ReplaceAction(TTI,
                 std::pair<Instruction*, Instruction*>(MemCpyA, MemCpyI));
