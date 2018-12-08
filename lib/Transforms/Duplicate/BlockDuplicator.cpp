@@ -265,6 +265,7 @@ ReplaceAction::ReplaceAction(const TargetTransformInfo *TTI,
     : ActionInst(P) {
   // TODO: calculate benefit/cost
   // in this case we both benefit and cost
+    Benefit = 1;
 }
 
 bool ReplaceAction::apply(BasicBlock *NewBlock, InstructionMap IMap) {
@@ -411,10 +412,25 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
         continue;
 
       // We cannot optimize volatile memory
-      if (MemCpyB->isVolatile())
+      if (MemCpyB->isVolatile()) {
+        errs() << "isVolatile\n";
         break;
+      }
 
       ConstantInt *CpySizeB = dyn_cast<ConstantInt>(MemCpyB->getLength());
+
+      errs() << "MemCpyA\n";
+      MemCpyA->print(errs());
+      errs() << '\n';
+      errs() << "MemCpyA Length: " << *CpySizeA << "\n";
+      errs() << "MemCpyA Source: " << *MemCpyA->getSource() << "\n";
+      errs() << "MemCpyA Dest: " << *MemCpyA->getDest() << "\n";
+      errs() << "MemCpyB\n";
+      MemCpyB->print(errs());
+      errs() << '\n';
+      errs() << "MemCpyB Length: " << *CpySizeB << "\n";
+      errs() << "MemCpyB Source: " << *MemCpyB->getSource() << "\n";
+      errs() << "MemCpyB Dest: " << *MemCpyB->getDest() << "\n";
 
       // B = memcpy(b <- a, x)
       // ..
@@ -428,11 +444,12 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
       */
       if (MemCpyA->getSource() == MemCpyB->getDest()) {
         // TODO: see comment above
+        errs() << "Found memcpy with new src as old dest\n";
         Value *Dest = MemCpyA->getRawDest();
-        Value *Src = MemCpyB->getRawDest();
+        Value *Src = MemCpyB->getRawSource();
         Value *CpyLen = MemCpyA->getLength();
 
-        IRBuilder<> Builder(MemCpyA);
+        IRBuilder<> Builder(MemCpyB);
         auto MemCpyI = Builder.CreateMemCpy(
                 Dest, MemCpyA->getDestAlignment(),
                 Src, MemCpyB->getSourceAlignment(),
@@ -442,6 +459,14 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
         ReplaceAction *RA = new ReplaceAction(TTI,
                 std::pair<Instruction*, Instruction*>(MemCpyB, MemCpyI));
         SimActions.push_back(RA);
+
+        errs() << "\tMCO AC: may replace,\n";
+        errs() << "\tthis: ";
+        MemCpyB->print(errs());
+        errs() << '\n';
+        errs() << "\twith this: ";
+        MemCpyI->print(errs());
+        errs() << '\n';
 
         continue;
       }
@@ -468,20 +493,22 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
       }
       */
 
-      // B = memcpy(b <- a, 12)
-      // A = memcpy(b <- a, 10)
-      // transform(B, memcpy((b+10) <- (a+10), 2))
+      // B = memcpy(b <- a, 10)
+      // A = memcpy(b <- a, 12)
+      // transform(A, memcpy((b+10) <- (a+10), 2))
       /*
         Will create a memcpyInstruction in the basic block of the the currrent
         instruction and the unlink it from the basic block.
         TODO: Find better way to create new Instruction
       */
-      if (CpySizeA->getZExtValue() < CpySizeB->getZExtValue()) {
+      if (CpySizeA->getZExtValue() > CpySizeB->getZExtValue()) {
         // TODO: see comment above
-        Value *Dest = MemCpyB->getRawDest();
+        errs() << "Found memcpy with longer length\n";
+
+        Value *Dest = MemCpyA->getRawDest();
         Value *Src = MemCpyA->getRawDest();
-        Value *DestSize = MemCpyB->getLength();
-        Value *SrcSize = MemCpyA->getLength();
+        Value *DestSize = MemCpyA->getLength();
+        Value *SrcSize = MemCpyB->getLength();
 
         IRBuilder<> Builder(MemCpyB);
         Value *SizeDiff = Builder.CreateSub(DestSize, SrcSize);
@@ -490,14 +517,22 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
                 Ule, ConstantInt::getNullValue(DestSize->getType()), SizeDiff);
 
         auto MemCpyI = Builder.CreateMemCpy(
-                Builder.CreateGEP(Dest, SrcSize), MemCpyB->getDestAlignment(),
+                Builder.CreateGEP(Dest, SrcSize), MemCpyA->getDestAlignment(),
                 Builder.CreateGEP(Src, SrcSize), MemCpyA->getSourceAlignment(),
                 NewCpyLen);
 
         MemCpyI->removeFromParent();
         ReplaceAction *RA = new ReplaceAction(TTI,
-                std::pair<Instruction*, Instruction*>(MemCpyB, MemCpyI));
+                std::pair<Instruction*, Instruction*>(MemCpyA, MemCpyI));
         SimActions.push_back(RA);
+
+        errs() << "\tMCO AC: may replace,\n";
+        errs() << "\tthis: ";
+        MemCpyA->print(errs());
+        errs() << '\n';
+        errs() << "\twith this: ";
+        MemCpyI->print(errs());
+        errs() << '\n';
       }
     }
   }
