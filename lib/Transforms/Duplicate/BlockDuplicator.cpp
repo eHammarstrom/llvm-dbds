@@ -478,7 +478,6 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
 
         MemCpyI->setSource(MemCpyB->getRawSource());
 
-        MemCpyI->removeFromParent();
         ReplaceAction *RA = new ReplaceAction(
             TTI, std::pair<Instruction *, Instruction *>(MemCpyA, MemCpyI));
         SimActions.push_back(RA);
@@ -786,7 +785,6 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
               ConstantInt::get(EarlierWriteLength->getType(), NewLength);
 
           auto NewInst = EarlierWrite->clone();
-          NewInst->removeFromParent();
           auto *NewInstIntrinsic = cast<AnyMemIntrinsic>(NewInst);
           NewInstIntrinsic->setLength(TrimmedLength);
 
