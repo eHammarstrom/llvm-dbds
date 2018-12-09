@@ -266,7 +266,7 @@ bool dse::isRemovable(Instruction *I) {
 
 /// Returns true if the end of this instruction can be safely shortened in
 /// length.
-static bool isShortenableAtTheEnd(Instruction *I) {
+bool dse::isShortenableAtTheEnd(Instruction *I) {
   // Don't shorten stores for now
   if (isa<StoreInst>(I))
     return false;
@@ -291,7 +291,7 @@ static bool isShortenableAtTheEnd(Instruction *I) {
 
 /// Returns true if the beginning of this instruction can be safely shortened
 /// in length.
-static bool isShortenableAtTheBeginning(Instruction *I) {
+bool dse::isShortenableAtTheBeginning(Instruction *I) {
   // FIXME: Handle only memset for now. Supporting memcpy/memmove should be
   // easily done by offsetting the source address.
   return isa<AnyMemSetInst>(I);

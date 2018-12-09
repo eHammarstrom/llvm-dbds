@@ -61,7 +61,8 @@ OverwriteResult isOverwrite(const MemoryLocation &Later,
                             int64_t &LaterOff, Instruction *DepWrite,
                             InstOverlapIntervalsTy &IOL, AliasAnalysis &AA,
                             const Function *F);
-
+bool isShortenableAtTheEnd(Instruction *I);
+bool isShortenableAtTheBeginning(Instruction *I);
 } // namespace dse
 
 } // end namespace llvm

@@ -265,7 +265,7 @@ ReplaceAction::ReplaceAction(const TargetTransformInfo *TTI,
     : ActionInst(P) {
   // TODO: calculate benefit/cost
   // in this case we both benefit and cost
-    Benefit = 1;
+  Benefit = 1;
 }
 
 bool ReplaceAction::apply(BasicBlock *NewBlock, InstructionMap IMap) {
@@ -338,19 +338,26 @@ InstructionMap Simulation::mergeBlocks() {
     IMap.insert(pair<Instruction *, Instruction *>(I, I));
   }
 
+  for (auto II = BP->begin(); II != BP->end(); ++II) {
+    errs() << "BP_before: ";
+    II->print(errs());
+    errs() << '\n';
+  }
+
+  SymbolMap NewUses;
+
   // Provide a mapping from all instructions to themselves
   // in the merge block. Move them to the predecessor block.
   // And reduce their PHI-usages.
   for (auto II = BM->begin(); II != BM->end(); ++II) {
+    errs() << "BM: ";
+    II->print(errs());
+    errs() << '\n';
     Instruction *I = cast<Instruction>(II);
 
-    // Here we peek into the map using the old instruction I
-    // because the PHITranslation was done in the original block
-    PHINode *PNC = dyn_cast<PHINode>(I);
-    if (PNC)
+    if (isa<PHINode>(I))
       continue;
 
-    // Clone instruction in merge block
     Instruction *ClonedInstruction = I->clone();
 
     // Create a synonym from old merge block instruction to newly cloned
@@ -360,17 +367,40 @@ InstructionMap Simulation::mergeBlocks() {
     // Insert the newly cloned instruction at the end of predecessor block
     BP->getInstList().insert(BP->end(), ClonedInstruction);
 
+    errs() << "Before and after PHI/IMap-translation:\n";
+    ClonedInstruction->print(errs());
+    errs() << '\n';
+
     // Replace all PHI uses with the Value mappings in the PHITranslation map
+    // Also replace all old instruction uses with the new ones in the IMap
     for (unsigned IOP = 0; IOP < ClonedInstruction->getNumOperands(); ++IOP) {
       Value *OP = ClonedInstruction->getOperand(IOP);
+      Instruction *OPInst = dyn_cast<Instruction>(OP);
 
-      // If we have no translation, continue
-      if (PHITranslation.find(OP) == PHITranslation.end())
-        continue;
+      if (PHITranslation.find(OP) != PHITranslation.end()) {
+        // If we have a PHI-translation, translate
 
-      // Replace PHI usage with concrete Value translation
-      ClonedInstruction->replaceUsesOfWith(OP, PHITranslation[OP]);
+        errs() << "Replacing: ";
+        OP->print(errs());
+        errs() << "\n\twith ";
+        PHITranslation[OP]->print(errs());
+        errs() << '\n';
+        ClonedInstruction->replaceUsesOfWith(OP, PHITranslation[OP]);
+
+      } else if (IMap.find(OPInst) != IMap.end()) {
+        // If we have an IMap translation, translate
+        ClonedInstruction->replaceUsesOfWith(OP, IMap[OPInst]);
+      }
     }
+
+    ClonedInstruction->print(errs());
+    errs() << '\n';
+  }
+
+  for (auto II = BP->begin(); II != BP->end(); ++II) {
+    errs() << "BP_after: ";
+    II->print(errs());
+    errs() << '\n';
   }
 
   return IMap;
@@ -450,16 +480,15 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
         Value *CpyLen = MemCpyA->getLength();
 
         IRBuilder<> Builder(MemCpyB);
-        auto MemCpyI = Builder.CreateMemCpy(
-                Dest, MemCpyA->getDestAlignment(),
-                Src, MemCpyB->getSourceAlignment(),
-                CpyLen);
+        auto MemCpyI =
+            Builder.CreateMemCpy(Dest, MemCpyA->getDestAlignment(), Src,
+                                 MemCpyB->getSourceAlignment(), CpyLen);
 
         // remove the newly created instruction the block to
         // get a standalone instruction
         MemCpyI->removeFromParent();
-        ReplaceAction *RA = new ReplaceAction(TTI,
-                std::pair<Instruction*, Instruction*>(MemCpyA, MemCpyI));
+        ReplaceAction *RA = new ReplaceAction(
+            TTI, std::pair<Instruction *, Instruction *>(MemCpyA, MemCpyI));
         SimActions.push_back(RA);
 
         errs() << "\tMCO AC: may replace,\n";
@@ -503,6 +532,7 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
         instruction and the unlink it from the basic block.
         TODO: Find better way to create new Instruction
       */
+      /* This is done in memcpy
       if (CpySizeA->getZExtValue() > CpySizeB->getZExtValue()) {
         // TODO: see comment above
         errs() << "Found memcpy with longer length\n";
@@ -538,6 +568,7 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
         MemCpyI->print(errs());
         errs() << '\n';
       }
+      */
     }
   }
 
@@ -592,8 +623,7 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
     if (!dse::hasAnalyzableMemoryWrite(IA, *TLI))
       continue;
 
-    errs() << "AnalyzableMemWrite\n";
-    errs() << "here: ";
+    errs() << "AnalyzableMemWrite (A): ";
     IA->print(errs());
     errs() << '\n';
 
@@ -614,8 +644,6 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
     if (!Loc.Ptr)
       continue;
 
-    errs() << "Before while\n";
-
     // Loop until we find a store we can eliminate
     for (auto IIB = IIA + 1; IIB != Instructions.rend(); ++IIB) {
 
@@ -631,21 +659,19 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
 
       // Can't look past this instruction if it might read 'Loc'.
       if (isRefSet(AA->getModRefInfo(DepWrite, Loc))) {
-        errs() << "\tInst: ";
+        errs() << "\tRead on mem loc A by (B): ";
         DepWrite->print(errs());
-        errs() << "\n\tMight read our mem loc\n";
+        errs() << '\n';
         break;
       }
 
       if (!dse::hasAnalyzableMemoryWrite(DepWrite, *TLI))
         continue;
 
-      errs() << "Before while2\n";
       MemoryLocation DepLoc = dse::getLocForWrite(DepWrite);
       // If we didn't get a useful location, or if it isn't a size, bail out.
       if (!DepLoc.Ptr)
         continue;
-      errs() << "Before while3\n";
 
       // Make sure we don't look past a call which might throw. This is an
       // issue because MemoryDependenceAnalysis works in the wrong direction:
@@ -682,14 +708,16 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
       if (dse::isRemovable(DepWrite) &&
           !dse::isPossibleSelfRead(IA, Loc, DepWrite, *TLI, *AA)) {
 
-        if (RemovedInst.find(DepWrite) != RemovedInst.end())
+        if (RemovedInst.find(DepWrite) != RemovedInst.end()) {
+          errs() << "Already removed (B)\n";
           continue;
+        }
 
-        errs() << "\tDSE AC: may remove,\n";
-        errs() << "\tthis: ";
+        errs() << "\tDSE AC will analyze,\n";
+        errs() << "\t\tthis (B): ";
         DepWrite->print(errs());
         errs() << '\n';
-        errs() << "\tbecause of this: ";
+        errs() << "\t\tbecause of this (A): ";
         IA->print(errs());
         errs() << '\n';
 
@@ -700,12 +728,91 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
                              InstWriteOffset, DepWrite, IOL, *AA, F);
 
         if (OR == dse::OW_Complete) {
-          errs() << "OW_Complete\n";
+          errs() << "*** OW_Complete\n";
           // Delete the store.
           SimActions.push_back(new RemoveAction(TTI, DepWrite));
           RemovedInst.insert(DepWrite);
+        } else if ((OR == dse::OW_End &&
+                    dse::isShortenableAtTheEnd(DepWrite)) ||
+                   ((OR == dse::OW_Begin &&
+                     dse::isShortenableAtTheBeginning(DepWrite)))) {
+          errs() << "*** OW_Begin or OW_End\n";
+          /*
+            MadeChange |= tryToShorten(DepWrite, DepWriteOffset, EarlierSize,
+                                       InstWriteOffset, LaterSize,
+            IsOverwriteEnd);
+              */
+
+          int64_t EarlierSize = DepLoc.Size;
+          int64_t LaterSize = Loc.Size;
+          bool IsOverwriteEnd = (OR == dse::OW_End);
+          Instruction *EarlierWrite = DepWrite;
+          int64_t EarlierOffset = DepWriteOffset;
+          int64_t LaterOffset = InstWriteOffset;
+
+          auto *EarlierIntrinsic = cast<AnyMemIntrinsic>(EarlierWrite);
+          unsigned EarlierWriteAlign = EarlierIntrinsic->getDestAlignment();
+          if (!IsOverwriteEnd)
+            LaterOffset = int64_t(LaterOffset + LaterSize);
+
+          if (!(isPowerOf2_64(LaterOffset) &&
+                EarlierWriteAlign <= LaterOffset) &&
+              !((EarlierWriteAlign != 0) &&
+                LaterOffset % EarlierWriteAlign == 0))
+            continue;
+
+          int64_t NewLength = IsOverwriteEnd
+                                  ? LaterOffset - EarlierOffset
+                                  : EarlierSize - (LaterOffset - EarlierOffset);
+
+          if (auto *AMI = dyn_cast<AtomicMemIntrinsic>(EarlierWrite)) {
+            // When shortening an atomic memory intrinsic, the newly shortened
+            // length must remain an integer multiple of the element size.
+            const uint32_t ElementSize = AMI->getElementSizeInBytes();
+            if (0 != NewLength % ElementSize)
+              continue;
+          }
+
+          errs() << "DSE: Remove Dead Store:\n  OW "
+                 << (IsOverwriteEnd ? "END" : "BEGIN") << ": " << *EarlierWrite
+                 << "\n  KILLER (offset " << LaterOffset << ", " << EarlierSize
+                 << ")\n";
+
+          Value *EarlierWriteLength = EarlierIntrinsic->getLength();
+          Value *TrimmedLength =
+              ConstantInt::get(EarlierWriteLength->getType(), NewLength);
+
+          auto NewInst = EarlierWrite->clone();
+          NewInst->removeFromParent();
+          auto *NewInstIntrinsic = cast<AnyMemIntrinsic>(NewInst);
+          NewInstIntrinsic->setLength(TrimmedLength);
+
+          /*
+          EarlierIntrinsic->setLength(TrimmedLength);
+          */
+          ReplaceAction *RA = new ReplaceAction(
+              TTI,
+              std::pair<Instruction *, Instruction *>(EarlierWrite, NewInst));
+
+          SimActions.push_back(RA);
+
+          EarlierSize = NewLength;
+          if (!IsOverwriteEnd) {
+            int64_t OffsetMoved = (LaterOffset - EarlierOffset);
+            Value *Indices[1] = {
+                ConstantInt::get(EarlierWriteLength->getType(), OffsetMoved)};
+            GetElementPtrInst *NewDestGEP = GetElementPtrInst::CreateInBounds(
+                EarlierIntrinsic->getRawDest(), Indices, "", EarlierWrite);
+
+            NewInstIntrinsic->setDest(NewDestGEP);
+            /*
+            EarlierIntrinsic->setDest(NewDestGEP);
+            */
+            EarlierOffset = EarlierOffset + OffsetMoved;
+          }
         } else if (OR == dse::OW_Begin) {
           errs() << "OW_Begin\n";
+
           // TODO
         } else if (OR == dse::OW_End) {
           errs() << "OW_End\n";
@@ -714,6 +821,10 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
           errs() << "OW_PartialEarlierWithFullLater\n";
           // TODO
         }
+      } else {
+        errs() << "Is non-removable or possible self-read: ";
+        DepWrite->print(errs());
+        errs() << '\n';
       }
     }
   }
