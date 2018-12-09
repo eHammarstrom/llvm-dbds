@@ -609,11 +609,6 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
 
   unordered_set<Instruction *> RemovedInst;
 
-  // For DSE memory dependence analysis.
-  size_t LastThrowingInstIndex = 0;
-  DenseMap<Instruction *, size_t> InstrOrdering;
-  size_t InstrIndex = 1;
-
   // Mod is the current compilation module
   const DataLayout &DL = Mod->getDataLayout();
 
@@ -629,13 +624,6 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
       continue;
     }
 
-    size_t CurInstNumber = InstrIndex++;
-    InstrOrdering.insert(std::make_pair(IA, CurInstNumber));
-    if (IA->mayThrow()) {
-      LastThrowingInstIndex = CurInstNumber;
-      continue;
-    }
-
     // Check to see if Inst writes to memory.  If not, continue.
     if (!dse::hasAnalyzableMemoryWrite(IA, *TLI))
       continue;
@@ -643,16 +631,6 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
     errs() << "AnalyzableMemWrite (A): ";
     IA->print(errs());
     errs() << '\n';
-
-    // If we find something that writes memory, get its memory dependence.
-    // MemDepResult InstDep = MD->getDependency(IA);
-
-    // Ignore any store where we can't find a local dependence.
-    // FIXME: cross-block DSE would be fun. :)
-    /*
-    if (!InstDep.isDef() && !InstDep.isClobber())
-      continue;
-    */
 
     // Figure out what location is being stored to.
     MemoryLocation Loc = dse::getLocForWrite(IA);
@@ -689,33 +667,6 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
       // If we didn't get a useful location, or if it isn't a size, bail out.
       if (!DepLoc.Ptr)
         continue;
-
-      // Make sure we don't look past a call which might throw. This is an
-      // issue because MemoryDependenceAnalysis works in the wrong direction:
-      // it finds instructions which dominate the current instruction, rather
-      // than instructions which are post-dominated by the current instruction.
-      //
-      // If the underlying object is a non-escaping memory allocation, any store
-      // to it is dead along the unwind edge. Otherwise, we need to preserve
-      // the store.
-      /*
-      size_t DepIndex = InstrOrdering.lookup(DepWrite);
-      assert(DepIndex && "Unexpected instruction");
-      if (DepIndex <= LastThrowingInstIndex) {
-        const Value *Underlying = GetUnderlyingObject(DepLoc.Ptr, DL);
-        bool IsStoreDeadOnUnwind = isa<AllocaInst>(Underlying);
-        if (!IsStoreDeadOnUnwind) {
-          // We're looking for a call to an allocation function
-          // where the allocation doesn't escape before the last
-          // throwing instruction; PointerMayBeCaptured
-          // reasonably fast approximation.
-          IsStoreDeadOnUnwind = isAllocLikeFn(Underlying, TLI) &&
-                                !PointerMayBeCaptured(Underlying, false, true);
-        }
-        if (!IsStoreDeadOnUnwind)
-          continue;
-      }
-      */
 
       // If we find a write that is a) removable (i.e., non-volatile), b) is
       // completely obliterated by the store to 'Loc', and c) which we know that
