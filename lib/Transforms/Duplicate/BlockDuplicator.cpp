@@ -445,18 +445,12 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
       if (MemCpyA->getSource() == MemCpyB->getDest()) {
         // TODO: see comment above
         errs() << "Found memcpy with src as old dest\n";
-        Value *Dest = MemCpyA->getRawDest();
-        Value *Src = MemCpyB->getRawSource();
-        Value *CpyLen = MemCpyA->getLength();
 
-        IRBuilder<> Builder(MemCpyB);
-        auto MemCpyI = Builder.CreateMemCpy(
-                Dest, MemCpyA->getDestAlignment(),
-                Src, MemCpyA->getSourceAlignment(),
-                CpyLen);
+        Instruction *I = MemCpyA->clone();
+        MemCpyInst *MemCpyI = dyn_cast<MemCpyInst>(I);
 
-        // remove the newly created instruction the block to
-        // get a standalone instruction
+        MemCpyI->setSource(MemCpyB->getRawSource());
+
         MemCpyI->removeFromParent();
         ReplaceAction *RA = new ReplaceAction(TTI,
                 std::pair<Instruction*, Instruction*>(MemCpyA, MemCpyI));
