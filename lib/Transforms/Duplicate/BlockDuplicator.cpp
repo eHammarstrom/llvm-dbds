@@ -425,21 +425,57 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
 
   errs() << "Performing MemCpy AC!\n";
 
+  for (auto II = Instructions.rbegin(); II != Instructions.rend(); ++II) {
+    Instruction *I = *II;
+    I->print(errs());
+    errs() << '\n';
+  }
+
   // Reverse iterator to only save last memcpy
   for (auto IIA = Instructions.rbegin(); IIA != Instructions.rend(); ++IIA) {
+
+    Instruction *IA = *IIA;
+
     MemCpyInst *MemCpyA;
-    if (!(MemCpyA = dyn_cast<MemCpyInst>(*IIA)))
+    if (!(MemCpyA = dyn_cast<MemCpyInst>(IA)))
       continue;
 
-    ConstantInt *CpySizeA = dyn_cast<ConstantInt>(MemCpyA->getLength());
+    // ConstantInt *CpySizeA = dyn_cast<ConstantInt>(MemCpyA->getLength());
+
+    MemoryLocation LocA = dse::getLocForWrite(MemCpyA);
+
+    errs() << "MemCpyA\n";
+    MemCpyA->print(errs());
+    errs() << '\n';
 
     // Reverse iterate after IIA and remove redundant memcpy
     for (auto IIB = IIA + 1; IIB != Instructions.rend(); ++IIB) {
+
       Instruction *IB = *IIB;
+
+      if (!dse::hasAnalyzableMemoryWrite(IB, *TLI))
+        continue;
+
+      // Check if an instruction, that is not a memcpy,
+      // writes to MemCpyA memory location, if so we cannot
+      // use MemCpyA source for coming optimizations
+      if (isModSet(AA->getModRefInfo(IB, LocA))
+          && !isa<MemCpyInst>(IB)) {
+        errs() << "Inst: ";
+        IB->print(errs());
+        errs() << "\nWrites our mem loc: ";
+        MemCpyA->print(errs());
+        errs() << '\n';
+        break;
+      }
 
       MemCpyInst *MemCpyB;
       if (!(MemCpyB = dyn_cast<MemCpyInst>(IB)))
         continue;
+
+      errs() << "MemCpyB\n";
+      MemCpyB->print(errs());
+      errs() << '\n';
 
       // We cannot optimize volatile memory
       if (MemCpyB->isVolatile()) {
@@ -447,20 +483,7 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
         break;
       }
 
-      ConstantInt *CpySizeB = dyn_cast<ConstantInt>(MemCpyB->getLength());
-
-      errs() << "MemCpyA\n";
-      MemCpyA->print(errs());
-      errs() << '\n';
-      errs() << "MemCpyA Length: " << *CpySizeA << "\n";
-      errs() << "MemCpyA Source: " << *MemCpyA->getSource() << "\n";
-      errs() << "MemCpyA Dest: " << *MemCpyA->getDest() << "\n";
-      errs() << "MemCpyB\n";
-      MemCpyB->print(errs());
-      errs() << '\n';
-      errs() << "MemCpyB Length: " << *CpySizeB << "\n";
-      errs() << "MemCpyB Source: " << *MemCpyB->getSource() << "\n";
-      errs() << "MemCpyB Dest: " << *MemCpyB->getDest() << "\n";
+      // ConstantInt *CpySizeB = dyn_cast<ConstantInt>(MemCpyB->getLength());
 
       // B = memcpy(b <- a, x)
       // ..
@@ -493,6 +516,7 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
         continue;
       }
 
+      /*
       // Optimization after this point needs both copy lengths
       if (!CpySizeA || !CpySizeB)
         continue;
@@ -504,15 +528,6 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
       // Optimization after this point require dest(A) == dest(B)
       if (MemCpyA->getDest() != MemCpyB->getDest())
         continue;
-
-      /* This should be handled by Dead Store Elimination AC
-      // B = memcpy(b <- a, 10)
-      // A = memcpy(b <- a, 12)
-      // remove(B)
-      if (CpySizeA->getZExtValue() >= CpySizeB->getZExtValue()) {
-        RemoveAction *SA = new RemoveAction(TTI, *IIB);
-        SimActions.push_back(SA);
-      }
       */
 
       // B = memcpy(b <- a, 10)
