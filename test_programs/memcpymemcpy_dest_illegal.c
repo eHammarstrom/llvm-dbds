@@ -11,10 +11,10 @@ void f(char* a, char* b, char* c, int i)
     b[5] = '\n';
     printf("%s\n", a);
   } else {
-    memcpy(c, a, 8 * sizeof(char));
+    memcpy(c, a, 4 * sizeof(char));
   }
 
-    memcpy(c, b, 6 * sizeof(char));
+  memcpy(c, b, 6 * sizeof(char));
 }
 
 int main()
@@ -31,6 +31,7 @@ int main()
   c = malloc(BUF_SIZE * sizeof(char));
 
   scanf("%s", a);
+  printf("%s\n", a); // 10
 
   f(a, b, c, i);
 
