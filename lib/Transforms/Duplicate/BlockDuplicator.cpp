@@ -437,15 +437,12 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
       // unchanged(b)
       // A = memcpy(c <- b, y)
       // transform(A, memcpy(c <- a, y))
-      /*
-        Will create a memcpyInstruction in the basic block of the the currrent
-        instruction and the unlink it from the basic block.
-        TODO: Find better way to create new Instruction
-      */
       if (MemCpyA->getSource() == MemCpyB->getDest()) {
         // TODO: see comment above
         errs() << "Found memcpy with src as old dest\n";
 
+        // Clonign since we only want to change Source for the
+        // instruction
         Instruction *I = MemCpyA->clone();
         MemCpyInst *MemCpyI = dyn_cast<MemCpyInst>(I);
 
