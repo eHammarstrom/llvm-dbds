@@ -106,7 +106,8 @@ else
 
     echo "10" > input10
     echo "0" > input0
-    echo "1023456789ABCDEFG" > inputString
+    echo "1023456789ABCDEFG" >> input10
+    echo "1023456789ABCDEFG" >> input0
     for test_file in *.ll; do
 	test_no_ext=${test_file%%.*}
 	echo ""
@@ -115,8 +116,8 @@ else
 	llc $test_no_ext.ll
 	clang $test_no_ext.s -o $test_no_ext.e
 	clang -O3 $PROJECT_DIR/test_programs/$test_no_ext.c
-    cat input10 inputString | ./$test_no_ext.e > $test_no_ext.output10
-    cat input10 inputString | ./a.out > $test_no_ext.correct10
+	./$test_no_ext.e < input10 > $test_no_ext.output10
+	./a.out < input10 > $test_no_ext.correct10
 	diff $test_no_ext.output10 $test_no_ext.correct10
 	./$test_no_ext.e < input0 > $test_no_ext.output0
 	./a.out < input0 > $test_no_ext.correct0
