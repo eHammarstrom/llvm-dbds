@@ -467,25 +467,17 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
       // unchanged(b)
       // A = memcpy(c <- b, y)
       // transform(A, memcpy(c <- a, y))
-      /*
-        Will create a memcpyInstruction in the basic block of the the currrent
-        instruction and the unlink it from the basic block.
-        TODO: Find better way to create new Instruction
-      */
       if (MemCpyA->getSource() == MemCpyB->getDest()) {
         // TODO: see comment above
-        errs() << "Found memcpy with new src as old dest\n";
-        Value *Dest = MemCpyA->getRawDest();
-        Value *Src = MemCpyB->getRawSource();
-        Value *CpyLen = MemCpyA->getLength();
+        errs() << "Found memcpy with src as old dest\n";
 
-        IRBuilder<> Builder(MemCpyB);
-        auto MemCpyI =
-            Builder.CreateMemCpy(Dest, MemCpyA->getDestAlignment(), Src,
-                                 MemCpyB->getSourceAlignment(), CpyLen);
+        // Clonign since we only want to change Source for the
+        // instruction
+        Instruction *I = MemCpyA->clone();
+        MemCpyInst *MemCpyI = dyn_cast<MemCpyInst>(I);
 
-        // remove the newly created instruction the block to
-        // get a standalone instruction
+        MemCpyI->setSource(MemCpyB->getRawSource());
+
         MemCpyI->removeFromParent();
         ReplaceAction *RA = new ReplaceAction(
             TTI, std::pair<Instruction *, Instruction *>(MemCpyA, MemCpyI));
@@ -536,6 +528,17 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
       if (CpySizeA->getZExtValue() > CpySizeB->getZExtValue()) {
         // TODO: see comment above
         errs() << "Found memcpy with longer length\n";
+
+
+        // checkif there are uses of B->dest, if thereare do opt
+        // else let DSE handle it
+        MemoryLocation Loc = dse::getLocForWrite(MemCpyB);
+        if (!isRefSet(AA->getModRefInfo(MemCpyA, Loc))) {
+            errs() << "\tInst: ";
+            MemCpyA->print(errs());
+            errs() << "\n\tReads our mem loc\n";
+            break;
+        }
 
         Value *Dest = MemCpyA->getRawDest();
         Value *Src = MemCpyA->getRawSource();
