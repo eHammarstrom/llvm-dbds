@@ -187,21 +187,15 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
   const int BenefitThreshold = 0;
 
   // Apply simulations if passing benefit/cost threshold
-#ifdef PRINTS
-  int i = 0;
-#endif
   for (Simulation *S : Simulations) {
-#ifdef PRINTS
-    errs() << "Simulation(" << ++i
-           << ") has Benefit = " << S->simulationBenefit() << '\n';
-#endif
+    S->print(errs());
     if (S->simulationBenefit() > BenefitThreshold) {
+      errs() << "~~~ MERGE APPLIED\n";
       Changed |= S->apply();
-#ifdef PRINTS
-      errs() << "\tApplied simulation! (" << Changed << ")\n";
-#endif
     }
   }
+
+  // may use assert(verifyModule()) to verify IR after pass
 
   return Changed;
 }
@@ -311,6 +305,16 @@ void Simulation::run() {
   }
 }
 
+void Simulation::cleanUpPHINodes() {
+  for (auto I = BM->begin(); isa<PHINode>(I); ++I) {
+    PHINode *PN = cast<PHINode>(I);
+    // Remove BP Value from PHI, without removing the instruction.
+    // If it becomes empty, the block will be destroyed later.
+    if (PN->getIncomingValueForBlock(BP) != PN)
+      PN->removeIncomingValue(BP, false);
+  }
+}
+
 int Simulation::simulationBenefit() {
   int Benefit = 0;
   int Cost = 0;
@@ -338,21 +342,10 @@ InstructionMap Simulation::mergeBlocks() {
     IMap.insert(pair<Instruction *, Instruction *>(I, I));
   }
 
-  for (auto II = BP->begin(); II != BP->end(); ++II) {
-    errs() << "BP_before: ";
-    II->print(errs());
-    errs() << '\n';
-  }
-
-  SymbolMap NewUses;
-
   // Provide a mapping from all instructions to themselves
   // in the merge block. Move them to the predecessor block.
   // And reduce their PHI-usages.
   for (auto II = BM->begin(); II != BM->end(); ++II) {
-    errs() << "BM: ";
-    II->print(errs());
-    errs() << '\n';
     Instruction *I = cast<Instruction>(II);
 
     if (isa<PHINode>(I))
@@ -365,11 +358,10 @@ InstructionMap Simulation::mergeBlocks() {
     IMap.insert(pair<Instruction *, Instruction *>(I, ClonedInstruction));
 
     // Insert the newly cloned instruction at the end of predecessor block
-    BP->getInstList().insert(BP->end(), ClonedInstruction);
+    BP->getInstList().push_back(ClonedInstruction);
 
-    errs() << "Before and after PHI/IMap-translation:\n";
-    ClonedInstruction->print(errs());
-    errs() << '\n';
+    LLVM_DEBUG(dbgs() << "Clone(" << *I << "->" << *ClonedInstruction
+                      << "  )\n");
 
     // Replace all PHI uses with the Value mappings in the PHITranslation map
     // Also replace all old instruction uses with the new ones in the IMap
@@ -380,27 +372,21 @@ InstructionMap Simulation::mergeBlocks() {
       if (PHITranslation.find(OP) != PHITranslation.end()) {
         // If we have a PHI-translation, translate
 
-        errs() << "Replacing: ";
-        OP->print(errs());
-        errs() << "\n\twith ";
-        PHITranslation[OP]->print(errs());
-        errs() << '\n';
-        ClonedInstruction->replaceUsesOfWith(OP, PHITranslation[OP]);
+        Value *PHIVal = PHITranslation[OP];
 
-      } else if (IMap.find(OPInst) != IMap.end()) {
+        LLVM_DEBUG(dbgs() << "PHITranslation Replacing: " << *OP << " <- "
+                          << *PHIVal << '\n');
+
+        ClonedInstruction->replaceUsesOfWith(OP, PHIVal);
+      }
+
+      if (IMap.find(OPInst) != IMap.end()) {
         // If we have an IMap translation, translate
+        LLVM_DEBUG(dbgs() << "IMap Replacing: " << *OP << " <- "
+                          << *IMap[OPInst] << '\n');
         ClonedInstruction->replaceUsesOfWith(OP, IMap[OPInst]);
       }
     }
-
-    ClonedInstruction->print(errs());
-    errs() << '\n';
-  }
-
-  for (auto II = BP->begin(); II != BP->end(); ++II) {
-    errs() << "BP_after: ";
-    II->print(errs());
-    errs() << '\n';
   }
 
   return IMap;
@@ -415,6 +401,9 @@ bool Simulation::apply() {
     Changed |= SA->apply(BP, IMap);
   }
 
+  // Clean up phi values after merge and optimizations
+  cleanUpPHINodes();
+
   return Changed;
 }
 
@@ -422,14 +411,6 @@ vector<SimulationAction *>
 MemCpyApplicabilityCheck::simulate(SymbolMap Map,
                                    const vector<Instruction *> Instructions) {
   vector<SimulationAction *> SimActions;
-
-  errs() << "Performing MemCpy AC!\n";
-
-  for (auto II = Instructions.rbegin(); II != Instructions.rend(); ++II) {
-    Instruction *I = *II;
-    I->print(errs());
-    errs() << '\n';
-  }
 
   // Reverse iterator to only save last memcpy
   for (auto IIA = Instructions.rbegin(); IIA != Instructions.rend(); ++IIA) {
@@ -440,13 +421,7 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
     if (!(MemCpyA = dyn_cast<MemCpyInst>(IA)))
       continue;
 
-    // ConstantInt *CpySizeA = dyn_cast<ConstantInt>(MemCpyA->getLength());
-
     MemoryLocation LocA = dse::getLocForWrite(MemCpyA);
-
-    errs() << "MemCpyA\n";
-    MemCpyA->print(errs());
-    errs() << '\n';
 
     // Reverse iterate after IIA and remove redundant memcpy
     for (auto IIB = IIA + 1; IIB != Instructions.rend(); ++IIB) {
@@ -459,13 +434,7 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
       // Check if an instruction, that is not a memcpy,
       // writes to MemCpyA memory location, if so we cannot
       // use MemCpyA source for coming optimizations
-      if (isModSet(AA->getModRefInfo(IB, LocA))
-          && !isa<MemCpyInst>(IB)) {
-        errs() << "Inst: ";
-        IB->print(errs());
-        errs() << "\nWrites our mem loc: ";
-        MemCpyA->print(errs());
-        errs() << '\n';
+      if (isModSet(AA->getModRefInfo(IB, LocA)) && !isa<MemCpyInst>(IB)) {
         break;
       }
 
@@ -473,17 +442,9 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
       if (!(MemCpyB = dyn_cast<MemCpyInst>(IB)))
         continue;
 
-      errs() << "MemCpyB\n";
-      MemCpyB->print(errs());
-      errs() << '\n';
-
       // We cannot optimize volatile memory
-      if (MemCpyB->isVolatile()) {
-        errs() << "isVolatile\n";
+      if (MemCpyB->isVolatile())
         break;
-      }
-
-      // ConstantInt *CpySizeB = dyn_cast<ConstantInt>(MemCpyB->getLength());
 
       // B = memcpy(b <- a, x)
       // ..
@@ -491,11 +452,7 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
       // A = memcpy(c <- b, y)
       // transform(A, memcpy(c <- a, y))
       if (MemCpyA->getSource() == MemCpyB->getDest()) {
-        // TODO: see comment above
-        errs() << "Found memcpy with src as old dest\n";
-
-        // Clonign since we only want to change Source for the
-        // instruction
+        // Cloning since we only want to change Source Value
         Instruction *I = MemCpyA->clone();
         MemCpyInst *MemCpyI = dyn_cast<MemCpyInst>(I);
 
@@ -504,95 +461,12 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
         ReplaceAction *RA = new ReplaceAction(
             TTI, std::pair<Instruction *, Instruction *>(MemCpyA, MemCpyI));
         SimActions.push_back(RA);
-
-        errs() << "\tMCO AC: may replace,\n";
-        errs() << "\tthis: ";
-        MemCpyB->print(errs());
-        errs() << '\n';
-        errs() << "\twith this: ";
-        MemCpyI->print(errs());
-        errs() << '\n';
-
-        continue;
       }
-
-      /*
-      // Optimization after this point needs both copy lengths
-      if (!CpySizeA || !CpySizeB)
-        continue;
-
-      // Optimization after this point require src(A) == src(B)
-      if (MemCpyA->getSource() != MemCpyB->getSource())
-        continue;
-
-      // Optimization after this point require dest(A) == dest(B)
-      if (MemCpyA->getDest() != MemCpyB->getDest())
-        continue;
-      */
-
-      // B = memcpy(b <- a, 10)
-      // A = memcpy(b <- a, 12)
-      // transform(A, memcpy((b+10) <- (a+10), 2))
-      /*
-        Will create a memcpyInstruction in the basic block of the the currrent
-        instruction and the unlink it from the basic block.
-        TODO: Find better way to create new Instruction
-      */
-      /* This is done in memcpy
-      if (CpySizeA->getZExtValue() > CpySizeB->getZExtValue()) {
-        // TODO: see comment above
-        errs() << "Found memcpy with longer length\n";
-
-
-        // checkif there are uses of B->dest, if thereare do opt
-        // else let DSE handle it
-        MemoryLocation Loc = dse::getLocForWrite(MemCpyB);
-        if (!isRefSet(AA->getModRefInfo(MemCpyA, Loc))) {
-            errs() << "\tInst: ";
-            MemCpyA->print(errs());
-            errs() << "\n\tReads our mem loc\n";
-            break;
-        }
-
-        Value *Dest = MemCpyA->getRawDest();
-        Value *Src = MemCpyA->getRawSource();
-        Value *DestSize = MemCpyA->getLength();
-        Value *SrcSize = MemCpyB->getLength();
-
-        IRBuilder<> Builder(MemCpyB);
-        Value *SizeDiff = Builder.CreateSub(DestSize, SrcSize);
-        Value *Ule = Builder.CreateICmpULE(DestSize, SrcSize);
-        Value *NewCpyLen = Builder.CreateSelect(
-                Ule, ConstantInt::getNullValue(DestSize->getType()), SizeDiff);
-
-        auto MemCpyI = Builder.CreateMemCpy(
-                Builder.CreateGEP(Dest, SrcSize), MemCpyA->getDestAlignment(),
-                Builder.CreateGEP(Src, SrcSize), MemCpyA->getSourceAlignment(),
-                NewCpyLen);
-
-        // remove the newly created instruction the block to
-        // get a standalone instruction
-        MemCpyI->removeFromParent();
-        ReplaceAction *RA = new ReplaceAction(TTI,
-                std::pair<Instruction*, Instruction*>(MemCpyA, MemCpyI));
-        SimActions.push_back(RA);
-
-        errs() << "\tMCO AC: may replace,\n";
-        errs() << "\tthis: ";
-        MemCpyA->print(errs());
-        errs() << '\n';
-        errs() << "\twith this: ";
-        MemCpyI->print(errs());
-        errs() << '\n';
-      }
-      */
     }
   }
 
   return SimActions;
 }
-
-MemCpyApplicabilityCheck::~MemCpyApplicabilityCheck() {}
 
 /**
  *
@@ -705,11 +579,6 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
                    ((OR == dse::OW_Begin &&
                      dse::isShortenableAtTheBeginning(DepWrite)))) {
           errs() << "*** OW_Begin or OW_End\n";
-          /*
-            MadeChange |= tryToShorten(DepWrite, DepWriteOffset, EarlierSize,
-                                       InstWriteOffset, LaterSize,
-            IsOverwriteEnd);
-              */
 
           int64_t EarlierSize = DepLoc.Size;
           int64_t LaterSize = Loc.Size;
@@ -741,11 +610,6 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
               continue;
           }
 
-          errs() << "DSE: Remove Dead Store:\n  OW "
-                 << (IsOverwriteEnd ? "END" : "BEGIN") << ": " << *EarlierWrite
-                 << "\n  KILLER (offset " << LaterOffset << ", " << EarlierSize
-                 << ")\n";
-
           Value *EarlierWriteLength = EarlierIntrinsic->getLength();
           Value *TrimmedLength =
               ConstantInt::get(EarlierWriteLength->getType(), NewLength);
@@ -753,10 +617,8 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
           auto NewInst = EarlierWrite->clone();
           auto *NewInstIntrinsic = cast<AnyMemIntrinsic>(NewInst);
           NewInstIntrinsic->setLength(TrimmedLength);
+          // EarlierIntrinsic->setLength(TrimmedLength);
 
-          /*
-          EarlierIntrinsic->setLength(TrimmedLength);
-          */
           ReplaceAction *RA = new ReplaceAction(
               TTI,
               std::pair<Instruction *, Instruction *>(EarlierWrite, NewInst));
@@ -772,9 +634,7 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
                 EarlierIntrinsic->getRawDest(), Indices, "", EarlierWrite);
 
             NewInstIntrinsic->setDest(NewDestGEP);
-            /*
-            EarlierIntrinsic->setDest(NewDestGEP);
-            */
+            // EarlierIntrinsic->setDest(NewDestGEP);
             EarlierOffset = EarlierOffset + OffsetMoved;
           }
         } else if (OR == dse::OW_Begin) {
@@ -788,15 +648,9 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
           errs() << "OW_PartialEarlierWithFullLater\n";
           // TODO
         }
-      } else {
-        errs() << "Is non-removable or possible self-read: ";
-        DepWrite->print(errs());
-        errs() << '\n';
       }
     }
   }
 
   return SimActions;
 }
-
-DeadStoreApplicabilityCheck::~DeadStoreApplicabilityCheck() {}

@@ -14,7 +14,7 @@ void f(int* a, int* b, int i)
     // optimalA = [x, x, x, x, _, _, _, _, ...]
   } else {
     memcpy(b, a, 4 * sizeof(int)); // = [_, _, y, y, y, y, _, _, ...]
-    b[3] = 'c';
+    b[3] = 'a';
 
     // optimalB = [_, _, y, y, y, y, _, _, ...]
     // optimalA = [x, x, _, _, _, _, _, _, ...]

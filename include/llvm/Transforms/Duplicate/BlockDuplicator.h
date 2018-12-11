@@ -85,7 +85,6 @@ public:
                      const TargetLibraryInfo *TLI, MemoryDependenceResults *MD,
                      AliasAnalysis *AA, Module *Mod, Function *F)
       : TTI(TTI), TLI(TLI), MD(MD), AA(AA), Mod(Mod), F(F) {}
-  virtual ~ApplicabilityCheck() = 0;
   // Returns the actions that should be taken to apply an optimization
   virtual vector<SimulationAction *> simulate(const SymbolMap,
                                               const vector<Instruction *>) = 0;
@@ -103,7 +102,6 @@ protected:
 class MemCpyApplicabilityCheck : public ApplicabilityCheck {
 public:
   using ApplicabilityCheck::ApplicabilityCheck;
-  ~MemCpyApplicabilityCheck();
   vector<SimulationAction *> simulate(const SymbolMap,
                                       const vector<Instruction *>);
 };
@@ -112,7 +110,6 @@ public:
 class DeadStoreApplicabilityCheck : public ApplicabilityCheck {
 public:
   using ApplicabilityCheck::ApplicabilityCheck;
-  ~DeadStoreApplicabilityCheck();
   vector<SimulationAction *> simulate(const SymbolMap,
                                       const vector<Instruction *>);
 };
@@ -120,9 +117,8 @@ public:
 class Simulation {
 public:
   Simulation(const TargetTransformInfo *TTI, const TargetLibraryInfo *TLI,
-             MemoryDependenceResults *MD, AliasAnalysis *AA, Function *F, BasicBlock *bp,
-             BasicBlock *bm);
-  ~Simulation();
+             MemoryDependenceResults *MD, AliasAnalysis *AA, Function *F,
+             BasicBlock *bp, BasicBlock *bm);
   void run();
   // The simulation benefit accounts for the cost of the duplication
   int simulationBenefit();
@@ -130,7 +126,18 @@ public:
   // instructions. This will replace bp in the CFG.
   bool apply();
 
+  void print(raw_ostream &O) {
+    O << "-- Simulation --\n";
+    O << "BP:\n";
+    BP->print(O);
+    O << "BM:\n";
+    BM->print(O);
+    O << "--            --\n";
+  }
+
 private:
+  // removes value in PHINodes incoming from BP
+  void cleanUpPHINodes();
   // Instruction cost model
   const TargetTransformInfo *TTI;
   // Function usage info and more
