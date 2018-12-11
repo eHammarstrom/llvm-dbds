@@ -258,6 +258,13 @@ FunctionPass *createCFGSimplificationPass(
 
 //===----------------------------------------------------------------------===//
 //
+// Code Duplication Simulation - Simulates optimizations
+// and duplicates blocks.
+//
+FunctionPass *createDuplicationSimulationPass();
+
+//===----------------------------------------------------------------------===//
+//
 // FlattenCFG - flatten CFG, reduce number of conditional branches by using
 // parallel-and and parallel-or mode, etc...
 //

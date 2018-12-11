@@ -38,6 +38,7 @@
 #include "llvm/Transforms/Instrumentation.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Scalar/GVN.h"
+#include "llvm/Transforms/Scalar/BlockDuplicator.h"
 #include "llvm/Transforms/Scalar/InstSimplifyPass.h"
 #include "llvm/Transforms/Scalar/SimpleLoopUnswitch.h"
 #include "llvm/Transforms/Utils.h"
@@ -411,6 +412,11 @@ void PassManagerBuilder::addFunctionSimplificationPasses(
   // Clean up after everything.
   addInstructionCombiningPass(MPM);
   addExtensionsToPM(EP_Peephole, MPM);
+
+  if (OptLevel > 2) {
+    MPM.add(createDuplicationSimulationPass());
+    MPM.add(createCFGSimplificationPass()); // Merge Unique Successors & remove dead BBs
+  }
 }
 
 void PassManagerBuilder::populateModulePassManager(

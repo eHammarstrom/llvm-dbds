@@ -108,6 +108,7 @@ void initializeCostModelAnalysisPass(PassRegistry&);
 void initializeCrossDSOCFIPass(PassRegistry&);
 void initializeDAEPass(PassRegistry&);
 void initializeDAHPass(PassRegistry&);
+void initializeDBDuplicationSimulationPass(PassRegistry&);
 void initializeDCELegacyPassPass(PassRegistry&);
 void initializeDSELegacyPassPass(PassRegistry&);
 void initializeDataFlowSanitizerPass(PassRegistry&);

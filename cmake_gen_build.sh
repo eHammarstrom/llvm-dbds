@@ -1,9 +1,12 @@
 TARGET=X86
-INSTALL_DIR=/opt/llvm/release_70
+INSTALL_DIR=/opt/llvm/release_70_duplicator
 
 cd ..
 mkdir build
 cd build
+
+export CC=clang
+export CXX=clang++
 
 cmake ../src -DCMAKE_BUILD_TYPE=Release \
   -DLLVM_ENABLE_ASSERTIONS=ON \
