@@ -164,12 +164,11 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
         */
 
         // Simulate duplication
-        Simulation *S =
-            new Simulation(&TTI, &TLI, &MD, &AA, &F, BB, BBSuccessor);
-        S->run();
+        Simulation S = Simulation(&TTI, &TLI, &MD, &AA, &F, BB, BBSuccessor);
+        S.run();
 
         // Collect all simulations
-        Simulations.push_back(S);
+        Simulations.push_back(&S);
       }
     }
 
