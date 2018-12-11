@@ -214,6 +214,8 @@ void appendInstructions(vector<Instruction *> &Instructions, BasicBlock *BB) {
   }
 }
 
+SimulationAction::~SimulationAction() {};
+
 int SimulationAction::getBenefit() {
   const int BenefitScaleFactor = 256;
 
@@ -275,7 +277,7 @@ Simulation::Simulation(const TargetTransformInfo *TTI,
                        const TargetLibraryInfo *TLI,
                        MemoryDependenceResults *MD, AliasAnalysis *AA,
                        Function *F, BasicBlock *bp, BasicBlock *bm)
-    : TTI(TTI), TLI(TLI), MD(MD), AA(AA), BP(bp), BM(bm) {
+    : BP(bp), BM(bm) {
   Module *Mod = BP->getModule();
 
   AC.push_back(new MemCpyApplicabilityCheck(TTI, TLI, MD, AA, Mod, F));
@@ -406,6 +408,8 @@ bool Simulation::apply() {
 
   return Changed;
 }
+
+ApplicabilityCheck::~ApplicabilityCheck() {};
 
 vector<SimulationAction *>
 MemCpyApplicabilityCheck::simulate(SymbolMap Map,

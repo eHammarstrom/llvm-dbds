@@ -38,6 +38,7 @@ using InstructionMap = map<Instruction *, Instruction *>;
 
 class SimulationAction {
 public:
+  virtual ~SimulationAction() = 0;
   // Calculates the benefit of an action taken
   virtual bool apply(BasicBlock *, InstructionMap) = 0;
   int getBenefit();
@@ -82,6 +83,7 @@ private:
 // Interface to be implemented by an optimization
 class ApplicabilityCheck {
 public:
+  virtual ~ApplicabilityCheck() = 0;
   ApplicabilityCheck(const TargetTransformInfo *TTI,
                      const TargetLibraryInfo *TLI, MemoryDependenceResults *MD,
                      AliasAnalysis *AA, Module *Mod, Function *F)
@@ -102,6 +104,7 @@ protected:
 // MemCpyOptimizer-like optimizations
 class MemCpyApplicabilityCheck : public ApplicabilityCheck {
 public:
+  ~MemCpyApplicabilityCheck() {}
   using ApplicabilityCheck::ApplicabilityCheck;
   vector<SimulationAction *> simulate(const SymbolMap,
                                       const vector<Instruction *>);
@@ -110,6 +113,7 @@ public:
 // DeadStoreElimination-like optimizations
 class DeadStoreApplicabilityCheck : public ApplicabilityCheck {
 public:
+  ~DeadStoreApplicabilityCheck() {}
   using ApplicabilityCheck::ApplicabilityCheck;
   vector<SimulationAction *> simulate(const SymbolMap,
                                       const vector<Instruction *>);
@@ -117,6 +121,20 @@ public:
 
 class Simulation {
 public:
+  ~Simulation() {
+    while (!Actions.empty()) {
+      SimulationAction *A = Actions.back();
+      Actions.pop_back();
+      delete A;
+    }
+
+    while (!AC.empty()) {
+      ApplicabilityCheck *A = AC.back();
+      AC.pop_back();
+      delete A;
+    }
+  }
+
   Simulation(const TargetTransformInfo *TTI, const TargetLibraryInfo *TLI,
              MemoryDependenceResults *MD, AliasAnalysis *AA, Function *F,
              BasicBlock *bp, BasicBlock *bm);
@@ -139,14 +157,6 @@ public:
 private:
   // removes value in PHINodes incoming from BP
   void cleanUpPHINodes();
-  // Instruction cost model
-  const TargetTransformInfo *TTI;
-  // Function usage info and more
-  const TargetLibraryInfo *TLI;
-  // Memory dependence
-  MemoryDependenceResults *MD;
-  // Alias analysis
-  AliasAnalysis *AA;
   // Duplicate BM, and merge inte BP
   InstructionMap mergeBlocks();
   // ApplicabilityChecks
