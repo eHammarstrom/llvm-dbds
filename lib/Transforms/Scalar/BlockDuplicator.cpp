@@ -223,6 +223,8 @@ int SimulationAction::getBenefit() {
 
 int SimulationAction::getCost() { return Cost; }
 
+int SimulationAction::getCodeSizeDiff() { return CodeSizeDiff; }
+
 AddAction::AddAction(const TargetTransformInfo *TTI,
                      pair<Instruction *, Instruction *> P)
     : ActionInst(P) {
@@ -246,6 +248,7 @@ RemoveAction::RemoveAction(const TargetTransformInfo *TTI, Instruction *I)
   unsigned InstCost =
       TTI->getInstructionCost(I, TargetTransformInfo::TCK_RecipThroughput);
   Benefit += InstCost;
+  CodeSizeDiff -= TTI->getInstructionCost(I, TargetTransformInfo::TCK_CodeSize);
 }
 
 bool RemoveAction::apply(BasicBlock *NewBlock, InstructionMap IMap) {
@@ -260,11 +263,19 @@ ReplaceAction::ReplaceAction(const TargetTransformInfo *TTI,
     : ActionInst(P) {
   // TODO: calculate benefit/cost
   // in this case we both benefit and cost
-  //unsigned InstCost = TTI->getInstructionCost(
-  //    P.second, TargetTransformInfo::TCK_RecipThroughput);
-  //Benefit += InstCost;
-  //Cost -= InstCost;
+  /*
+   * Not checking the instruction cost here
+   * as the benefit migh be unrelated to the instruction
+   * and habe to do with parameters
+   * We trust that the AC was able to do an optimization that
+   * will show performance benefits.
+   */
   Benefit = 1;
+  int OldSize =
+      TTI->getInstructionCost(P.first, TargetTransformInfo::TCK_CodeSize);
+  int NewSize =
+      TTI->getInstructionCost(P.second, TargetTransformInfo::TCK_CodeSize);
+  CodeSizeDiff = OldSize - NewSize;
 }
 
 bool ReplaceAction::apply(BasicBlock *NewBlock, InstructionMap IMap) {
@@ -280,7 +291,7 @@ Simulation::Simulation(const TargetTransformInfo *TTI,
                        const TargetLibraryInfo *TLI,
                        MemoryDependenceResults *MD, AliasAnalysis *AA,
                        Function *F, BasicBlock *bp, BasicBlock *bm)
-    :TTI(TTI), BP(bp), BM(bm) {
+    : TTI(TTI), BP(bp), BM(bm) {
   Module *Mod = BP->getModule();
 
   AC.push_back(new MemCpyApplicabilityCheck(TTI, TLI, MD, AA, Mod, F));
@@ -300,7 +311,8 @@ Simulation::Simulation(const TargetTransformInfo *TTI,
   appendInstructions(Instructions, BM);
 }
 
-unsigned Simulation::calculateBPInstructionCost(const TargetTransformInfo *TTI) {
+unsigned
+Simulation::calculateBPInstructionCost(const TargetTransformInfo *TTI) {
   unsigned Cost = 0;
   for (Instruction &I : *BP) {
     Cost +=
@@ -323,19 +335,18 @@ unsigned Simulation::calculateDuplicationCost(const TargetTransformInfo *TTI) {
 unsigned Simulation::calculateBPCodeSize(const TargetTransformInfo *TTI) {
   unsigned Cost = 0;
   for (Instruction &I : *BP) {
-    Cost +=
-        TTI->getInstructionCost(&I, TargetTransformInfo::TCK_CodeSize);
+    Cost += TTI->getInstructionCost(&I, TargetTransformInfo::TCK_CodeSize);
   }
   return Cost;
 }
 
-unsigned Simulation::calculateDuplicationCodeSize(const TargetTransformInfo *TTI) {
+unsigned
+Simulation::calculateDuplicationCodeSize(const TargetTransformInfo *TTI) {
   unsigned Cost = 0;
   for (Instruction &I : *BM) {
     if (isa<PHINode>(I))
       continue;
-    Cost +=
-        TTI->getInstructionCost(&I, TargetTransformInfo::TCK_CodeSize);
+    Cost += TTI->getInstructionCost(&I, TargetTransformInfo::TCK_CodeSize);
   }
   return Cost;
 }
@@ -367,26 +378,29 @@ int Simulation::simulationBenefit() {
   int DuplicationCodeSize = calculateDuplicationCodeSize(TTI);
   int CurrBlockCodeSize = calculateBPCodeSize(TTI);
   int NewBlockCodeSize = 0;
+  int CodeSizeDiff = 0;
 
   for (auto A : Actions) {
     Benefit += A->getBenefit();
     Cost += A->getCost();
+    CodeSizeDiff += A->getCodeSizeDiff();
   }
 
   errs() << "Benefit: " << Benefit << '\n';
   errs() << "Cost: " << Cost << '\n';
+  DuplicationCodeSize += CodeSizeDiff;
 
   NewBlockCodeSize = DuplicationCodeSize + CurrBlockCodeSize;
 
-  errs() << "CurrBLockCodeSize : " << CurrBlockCodeSize<< '\n';
+  errs() << "CurrBLockCodeSize : " << CurrBlockCodeSize << '\n';
   errs() << "DuplicationCodeSize : " << DuplicationCodeSize << '\n';
-  errs() << "NewBlockCodeSize : " << NewBlockCodeSize<< '\n';
+  errs() << "NewBlockCodeSize : " << NewBlockCodeSize << '\n';
 
   // If the blocks code size has increased to much
   // do not apply the simulation
   if (NewBlockCodeSize > (CurrBlockCodeSize * CodeSizeIncreaseThreshold)) {
-      errs() << "NewBLockSize above threshold: " << NewBlockCodeSize << '\n';
-      return 0;
+    errs() << "NewBLockSize above threshold: " << NewBlockCodeSize << '\n';
+    return 0;
   }
 
   return Benefit - Cost;

@@ -43,6 +43,7 @@ public:
   virtual bool apply(BasicBlock *, InstructionMap) = 0;
   int getBenefit();
   int getCost();
+  int getCodeSizeDiff();
 
 protected:
   SimulationAction() {}
@@ -50,6 +51,8 @@ protected:
   int Benefit = 0;
   // Cost of duplication simulation
   int Cost = 0;
+  // Code size change
+  int CodeSizeDiff = 0;
 };
 
 class AddAction : public SimulationAction {
