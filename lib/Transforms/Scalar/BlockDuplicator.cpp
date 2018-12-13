@@ -48,15 +48,15 @@
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
+#include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Scalar/BlockDuplicator.h"
 #include "llvm/Transforms/Scalar/DeadStoreElimination.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/Cloning.h"
-#include "llvm/Transforms/Scalar.h"
-#include "llvm/InitializePasses.h"
 
 using namespace llvm;
 using namespace llvm::blockduplicator;
@@ -101,15 +101,15 @@ struct DBDuplicationSimulation : public FunctionPass {
 } // namespace
 
 char DBDuplicationSimulation::ID = 0;
-INITIALIZE_PASS_BEGIN(DBDuplicationSimulation, "simulator", "Simulate optimizations and duplicate", false,
-                      false)
+INITIALIZE_PASS_BEGIN(DBDuplicationSimulation, "simulator",
+                      "Simulate optimizations and duplicate", false, false)
 INITIALIZE_PASS_DEPENDENCY(DominatorTreeWrapperPass)
 INITIALIZE_PASS_DEPENDENCY(TargetTransformInfoWrapperPass)
 INITIALIZE_PASS_DEPENDENCY(TargetLibraryInfoWrapperPass)
 INITIALIZE_PASS_DEPENDENCY(MemoryDependenceWrapperPass)
 INITIALIZE_PASS_DEPENDENCY(AAResultsWrapperPass)
-INITIALIZE_PASS_END(DBDuplicationSimulation, "simulator", "Simulate optimizations and duplicate", false,
-                    false)
+INITIALIZE_PASS_END(DBDuplicationSimulation, "simulator",
+                    "Simulate optimizations and duplicate", false, false)
 
 /*
 static RegisterPass<DBDuplicationSimulation> X("simulator",
@@ -117,7 +117,7 @@ static RegisterPass<DBDuplicationSimulation> X("simulator",
 */
 
 // Public interface to the Duplication Simulation Pass.
-FunctionPass* llvm::createDuplicationSimulationPass() {
+FunctionPass *llvm::createDuplicationSimulationPass() {
   return new DBDuplicationSimulation();
 }
 
@@ -213,7 +213,7 @@ void appendInstructions(vector<Instruction *> &Instructions, BasicBlock *BB) {
   }
 }
 
-SimulationAction::~SimulationAction() {};
+SimulationAction::~SimulationAction(){};
 
 int SimulationAction::getBenefit() {
   const int BenefitScaleFactor = 256;
@@ -260,6 +260,10 @@ ReplaceAction::ReplaceAction(const TargetTransformInfo *TTI,
     : ActionInst(P) {
   // TODO: calculate benefit/cost
   // in this case we both benefit and cost
+  //unsigned InstCost = TTI->getInstructionCost(
+  //    P.second, TargetTransformInfo::TCK_RecipThroughput);
+  //Benefit += InstCost;
+  //Cost -= InstCost;
   Benefit = 1;
 }
 
@@ -276,7 +280,7 @@ Simulation::Simulation(const TargetTransformInfo *TTI,
                        const TargetLibraryInfo *TLI,
                        MemoryDependenceResults *MD, AliasAnalysis *AA,
                        Function *F, BasicBlock *bp, BasicBlock *bm)
-    : BP(bp), BM(bm) {
+    :TTI(TTI), BP(bp), BM(bm) {
   Module *Mod = BP->getModule();
 
   AC.push_back(new MemCpyApplicabilityCheck(TTI, TLI, MD, AA, Mod, F));
@@ -294,6 +298,46 @@ Simulation::Simulation(const TargetTransformInfo *TTI,
 
   appendInstructions(Instructions, BP);
   appendInstructions(Instructions, BM);
+}
+
+unsigned Simulation::calculateBPInstructionCost(const TargetTransformInfo *TTI) {
+  unsigned Cost = 0;
+  for (Instruction &I : *BP) {
+    Cost +=
+        TTI->getInstructionCost(&I, TargetTransformInfo::TCK_RecipThroughput);
+  }
+  return Cost;
+}
+
+unsigned Simulation::calculateDuplicationCost(const TargetTransformInfo *TTI) {
+  unsigned Cost = 0;
+  for (Instruction &I : *BM) {
+    if (isa<PHINode>(I))
+      continue;
+    Cost +=
+        TTI->getInstructionCost(&I, TargetTransformInfo::TCK_RecipThroughput);
+  }
+  return Cost;
+}
+
+unsigned Simulation::calculateBPCodeSize(const TargetTransformInfo *TTI) {
+  unsigned Cost = 0;
+  for (Instruction &I : *BP) {
+    Cost +=
+        TTI->getInstructionCost(&I, TargetTransformInfo::TCK_CodeSize);
+  }
+  return Cost;
+}
+
+unsigned Simulation::calculateDuplicationCodeSize(const TargetTransformInfo *TTI) {
+  unsigned Cost = 0;
+  for (Instruction &I : *BM) {
+    if (isa<PHINode>(I))
+      continue;
+    Cost +=
+        TTI->getInstructionCost(&I, TargetTransformInfo::TCK_CodeSize);
+  }
+  return Cost;
 }
 
 void Simulation::run() {
@@ -317,15 +361,33 @@ void Simulation::cleanUpPHINodes() {
 }
 
 int Simulation::simulationBenefit() {
+  const int CodeSizeIncreaseThreshold = 3;
   int Benefit = 0;
   int Cost = 0;
+  int DuplicationCodeSize = calculateDuplicationCodeSize(TTI);
+  int CurrBlockCodeSize = calculateBPCodeSize(TTI);
+  int NewBlockCodeSize = 0;
 
   for (auto A : Actions) {
     Benefit += A->getBenefit();
     Cost += A->getCost();
   }
 
-  // TODO: evaluate the benefit function
+  errs() << "Benefit: " << Benefit << '\n';
+  errs() << "Cost: " << Cost << '\n';
+
+  NewBlockCodeSize = DuplicationCodeSize + CurrBlockCodeSize;
+
+  errs() << "CurrBLockCodeSize : " << CurrBlockCodeSize<< '\n';
+  errs() << "DuplicationCodeSize : " << DuplicationCodeSize << '\n';
+  errs() << "NewBlockCodeSize : " << NewBlockCodeSize<< '\n';
+
+  // If the blocks code size has increased to much
+  // do not apply the simulation
+  if (NewBlockCodeSize > (CurrBlockCodeSize * CodeSizeIncreaseThreshold)) {
+      errs() << "NewBLockSize above threshold: " << NewBlockCodeSize << '\n';
+      return 0;
+  }
 
   return Benefit - Cost;
 }
@@ -408,7 +470,7 @@ bool Simulation::apply() {
   return Changed;
 }
 
-ApplicabilityCheck::~ApplicabilityCheck() {};
+ApplicabilityCheck::~ApplicabilityCheck(){};
 
 vector<SimulationAction *>
 MemCpyApplicabilityCheck::simulate(SymbolMap Map,
@@ -546,8 +608,8 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
         if (RemovedInst.find(DepWrite) != RemovedInst.end())
           continue;
 
-
-        LLVM_DEBUG(dbgs() << "DSE AC(" << *DepWrite << " given " << *IA << " )\n");
+        LLVM_DEBUG(dbgs() << "DSE AC(" << *DepWrite << " given " << *IA
+                          << " )\n");
 
         int64_t InstWriteOffset, DepWriteOffset;
 

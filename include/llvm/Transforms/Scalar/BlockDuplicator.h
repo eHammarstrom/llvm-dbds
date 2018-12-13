@@ -155,6 +155,8 @@ public:
   }
 
 private:
+  // TargetTransfomrInfo
+  const TargetTransformInfo *TTI;
   // removes value in PHINodes incoming from BP
   void cleanUpPHINodes();
   // Duplicate BM, and merge inte BP
@@ -173,6 +175,14 @@ private:
   // The actions to be taken to transform the duplication block
   // into its optimized equivalent.
   vector<SimulationAction *> Actions;
+  // Calculate the cost for the instructions in BP
+  unsigned calculateBPInstructionCost(const TargetTransformInfo *TTI);
+  // Calculate the cost of duplicating
+  unsigned calculateDuplicationCost(const TargetTransformInfo *TTI);
+  // Calculate the CodeSize for the instructions in BP
+  unsigned calculateBPCodeSize(const TargetTransformInfo *TTI);
+  // Calculate the CodeSize for duplicating
+  unsigned calculateDuplicationCodeSize(const TargetTransformInfo *TTI);
 };
 
 } // namespace blockduplicator
