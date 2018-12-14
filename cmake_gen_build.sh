@@ -1,5 +1,5 @@
 TARGET=X86
-INSTALL_DIR=/opt/llvm/release_70
+INSTALL_DIR=/opt/llvm/release_70_dbds_dyn
 
 cd ..
 mkdir build

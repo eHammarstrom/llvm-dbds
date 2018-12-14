@@ -27,6 +27,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "llvm/PassRegistry.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/AliasAnalysis.h"
@@ -47,6 +48,7 @@
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Type.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/Casting.h"
@@ -55,8 +57,11 @@
 #include "llvm/Transforms/Scalar/DeadStoreElimination.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/Cloning.h"
+#include "llvm/Transforms/IPO/PassManagerBuilder.h"
+#include "llvm/Transforms/Scalar.h"
 
 using namespace llvm;
+using namespace llvm::legacy;
 using namespace llvm::blockduplicator;
 
 #define DEBUG_TYPE "simulator"
@@ -102,6 +107,15 @@ struct DBDuplicationSimulation : public FunctionPass {
 char DBDuplicationSimulation::ID = 0;
 static RegisterPass<DBDuplicationSimulation> X("simulator",
                                                "Duplication Simulator Pass");
+
+static void registerDBDS(const PassManagerBuilder &,
+                           PassManagerBase &PM) {
+    PM.add(new DBDuplicationSimulation());
+    PM.add(createCFGSimplificationPass());
+}
+static RegisterStandardPasses
+    RegisterMyPass(PassManagerBuilder::EP_OptimizerLast,
+                   registerDBDS);
 
 bool DBDuplicationSimulation::runOnFunction(Function &F) {
   if (skipFunction(F))
