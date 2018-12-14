@@ -388,13 +388,15 @@ int Simulation::simulationBenefit() {
 
   errs() << "Benefit: " << Benefit << '\n';
   errs() << "Cost: " << Cost << '\n';
+
   DuplicationCodeSize += CodeSizeDiff;
 
   NewBlockCodeSize = DuplicationCodeSize + CurrBlockCodeSize;
 
-  errs() << "CurrBLockCodeSize : " << CurrBlockCodeSize << '\n';
-  errs() << "DuplicationCodeSize : " << DuplicationCodeSize << '\n';
-  errs() << "NewBlockCodeSize : " << NewBlockCodeSize << '\n';
+  errs() << "CodeSizeDiff: " << CodeSizeDiff << '\n';
+  errs() << "CurrBLockCodeSize: " << CurrBlockCodeSize << '\n';
+  errs() << "DuplicationCodeSize: " << DuplicationCodeSize << '\n';
+  errs() << "NewBlockCodeSize: " << NewBlockCodeSize << '\n';
 
   // If the blocks code size has increased to much
   // do not apply the simulation
