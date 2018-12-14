@@ -388,23 +388,36 @@ int Simulation::simulationBenefit() {
     CodeSizeDiff += A->getCodeSizeDiff();
   }
 
+#ifdef PRINT_COST_ANALYSIS
+  errs() << "BP:\n";
+  errs() << *BP;
+  errs() << "\n";
+  errs() << "BM:\n";
+  errs() << *BM;
+  errs() << "\n";
+
   errs() << "Benefit: " << Benefit << '\n';
   errs() << "Cost: " << Cost << '\n';
+#endif
 
   DuplicationCodeSize += CodeSizeDiff;
 
   NewBlockCodeSize = DuplicationCodeSize + CurrBlockCodeSize;
 
+#ifdef PRINT_COST_ANALYSIS
   errs() << "CodeSizeDiff: " << CodeSizeDiff << '\n';
   errs() << "CurrBLockCodeSize: " << CurrBlockCodeSize << '\n';
   errs() << "DuplicationCodeSize: " << DuplicationCodeSize << '\n';
   errs() << "NewBlockCodeSize: " << NewBlockCodeSize << '\n';
+#endif
 
   // If the blocks code size has increased to much
   // do not apply the simulation
   if (NewBlockCodeSize > (CurrBlockCodeSize * CodeSizeIncreaseThreshold)) {
+#ifdef PRINT_COST_ANALYSIS
     errs() << "NewBLockSize above threshold: " << NewBlockCodeSize << '\n';
     return 0;
+#endif
   }
 
   return Benefit - Cost;
