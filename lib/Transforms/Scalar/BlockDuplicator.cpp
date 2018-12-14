@@ -164,11 +164,11 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
         */
 
         // Simulate duplication
-        Simulation S = Simulation(&TTI, &TLI, &MD, &AA, &F, BB, BBSuccessor);
-        S.run();
+        Simulation *S = new Simulation(&TTI, &TLI, &MD, &AA, &F, BB, BBSuccessor);
+        S->run();
 
         // Collect all simulations
-        Simulations.push_back(&S);
+        Simulations.push_back(S);
       }
     }
 
@@ -195,6 +195,8 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
       Changed |= S->apply();
       ++DuplicationCounter;
     }
+
+    delete S;
   }
 
   // may use assert(verifyModule()) to verify IR after pass
