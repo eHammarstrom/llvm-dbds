@@ -9,6 +9,8 @@ TEST_DIR=$PROJECT_DIR/test/Transforms/Duplicate
 
 # use built opt because of our lib mods
 OPT=$PROJECT_DIR/../build/bin/opt
+CLANG=$PROJECT_DIR/../build/bin/clang
+LLC=$PROJECT_DIR/../build/bin/llc
 
 # generate LLVM IR from test_programs
 rm -f test/Transforms/Duplicate/*
@@ -17,7 +19,7 @@ cd $PROJECT_DIR/test_programs
 
 for test_prog in *.c; do
     test_no_ext=${test_prog%%.*}
-    clang -S -O0 -Xclang -disable-O0-optnone -emit-llvm \
+    $CLANG -S -O0 -Xclang -disable-O0-optnone -emit-llvm \
 	  -fno-inline-functions \
 	  $test_prog -o $TEST_DIR/$test_no_ext.ll
 done
@@ -37,18 +39,19 @@ then
 	if [ "$2" == "grep" ]
 	then
 	    $OPT -debug-pass=Structure -S -o /dev/null \
-		 -load $PROJECT_DIR/../build/lib/LLVMBlockDuplicator.so \
-		 -O3 -simulator -simplifycfg \
-		 -time-passes -stats \
+		 -O3 -time-passes -stats \
 		 < $test_file 2> out > /dev/null
+
+		 # -load $PROJECT_DIR/../build/lib/LLVMBlockDuplicator.so \
 
 	    cat out | grep $3
 	else
 	    $OPT -debug-pass=Structure -S -o /dev/null \
-		 -load $PROJECT_DIR/../build/lib/LLVMBlockDuplicator.so \
-		 -O3 -simulator -simplifycfg \
+		 -O3 \
 		 -time-passes -stats \
 		 < $test_file > /dev/null
+
+		 # -load $PROJECT_DIR/../build/lib/LLVMBlockDuplicator.so \
 	fi
     done
 
@@ -73,9 +76,11 @@ else
 
 	$OPT -S \
 	     -o $PROJECT_DIR/test_result/$test_file \
-	     -load $PROJECT_DIR/../build/lib/LLVMBlockDuplicator.so \
-	     -O3 -simulator -simplifycfg -dot-dom -dot-cfg \
+	     -O3 -dot-dom -dot-cfg \
+	     -debug-only simulator \
 	     < $test_file #&> OUT_FILE # redirect stdin and stderr to OUT_FILE
+
+	     # -load $PROJECT_DIR/../build/lib/LLVMBlockDuplicator.so \
 
 	# produce AFTER graphs
 	for dot_file in *.dot; do
@@ -113,9 +118,9 @@ else
 	echo ""
 	echo "*********** TESTING: $test_no_ext ***********"
 	echo ""
-	llc $test_no_ext.ll
-	clang $test_no_ext.s -o $test_no_ext.e
-	clang -O3 $PROJECT_DIR/test_programs/$test_no_ext.c
+	$LLC $test_no_ext.ll
+	$CLANG $test_no_ext.s -o $test_no_ext.e
+	$CLANG -O3 $PROJECT_DIR/test_programs/$test_no_ext.c
 	./$test_no_ext.e < input10 > $test_no_ext.output10
 	./a.out < input10 > $test_no_ext.correct10
 	diff $test_no_ext.output10 $test_no_ext.correct10

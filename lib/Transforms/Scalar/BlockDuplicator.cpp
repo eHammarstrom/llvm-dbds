@@ -164,11 +164,11 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
         */
 
         // Simulate duplication
-        Simulation S = Simulation(&TTI, &TLI, &MD, &AA, &F, BB, BBSuccessor);
-        S.run();
+        Simulation *S = new Simulation(&TTI, &TLI, &MD, &AA, &F, BB, BBSuccessor);
+        S->run();
 
         // Collect all simulations
-        Simulations.push_back(&S);
+        Simulations.push_back(S);
       }
     }
 
@@ -195,6 +195,8 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
       Changed |= S->apply();
       ++DuplicationCounter;
     }
+
+    delete S;
   }
 
   // may use assert(verifyModule()) to verify IR after pass
@@ -516,6 +518,7 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
       // writes to MemCpyA memory location, if so we cannot
       // use MemCpyA source for coming optimizations
       if (isModSet(AA->getModRefInfo(IB, LocA)) && !isa<MemCpyInst>(IB)) {
+        LLVM_DEBUG(dbgs() << "WritesTo (" << *IB << "," << *IA << " )\n");
         break;
       }
 
@@ -538,6 +541,8 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
         MemCpyInst *MemCpyI = dyn_cast<MemCpyInst>(I);
 
         MemCpyI->setSource(MemCpyB->getRawSource());
+
+        LLVM_DEBUG(dbgs() << "Replacing (" << *IA << "," << *I << " )\n");
 
         ReplaceAction *RA = new ReplaceAction(
             TTI, std::pair<Instruction *, Instruction *>(MemCpyA, MemCpyI));
@@ -635,6 +640,7 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
 
         if (OR == dse::OW_Complete) {
           // Delete the store.
+          LLVM_DEBUG(dbgs() << "Removing (" << *DepWrite << " )\n");
           SimActions.push_back(new RemoveAction(TTI, DepWrite));
           RemovedInst.insert(DepWrite);
         } else if ((OR == dse::OW_End &&
@@ -681,6 +687,7 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
           NewInstIntrinsic->setLength(TrimmedLength);
           // EarlierIntrinsic->setLength(TrimmedLength);
 
+          LLVM_DEBUG(dbgs() << "Replacing (" << *EarlierWrite << "," << *NewInst << " )\n");
           ReplaceAction *RA = new ReplaceAction(
               TTI,
               std::pair<Instruction *, Instruction *>(EarlierWrite, NewInst));
