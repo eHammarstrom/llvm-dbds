@@ -77,6 +77,7 @@ else
 	$OPT -S \
 	     -o $PROJECT_DIR/test_result/$test_file \
 	     -O3 -dot-dom -dot-cfg \
+	     -debug-only simulator \
 	     < $test_file #&> OUT_FILE # redirect stdin and stderr to OUT_FILE
 
 	     # -load $PROJECT_DIR/../build/lib/LLVMBlockDuplicator.so \
