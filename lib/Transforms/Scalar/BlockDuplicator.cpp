@@ -111,10 +111,8 @@ INITIALIZE_PASS_DEPENDENCY(AAResultsWrapperPass)
 INITIALIZE_PASS_END(DBDuplicationSimulation, "simulator", "Simulate optimizations and duplicate", false,
                     false)
 
-/*
 static RegisterPass<DBDuplicationSimulation> X("simulator",
                                                "Duplication Simulator Pass");
-*/
 
 // Public interface to the Duplication Simulation Pass.
 FunctionPass* llvm::createDuplicationSimulationPass() {
@@ -198,6 +196,10 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
 
     delete S;
   }
+  if (Changed)
+    LLVM_DEBUG(dbgs() << "Applied simulation(s)\n";);
+  else
+    LLVM_DEBUG(dbgs() << "Applied no simulation(s)\n";);
 
   // may use assert(verifyModule()) to verify IR after pass
 
@@ -319,6 +321,10 @@ void Simulation::cleanUpPHINodes() {
 }
 
 int Simulation::simulationBenefit() {
+  if (Actions.size() == 0) {
+      LLVM_DEBUG(dbgs() << "DBDS: No SimulationActions to evaluate\n");
+      return 0;
+  }
   int Benefit = 0;
   int Cost = 0;
 
@@ -472,6 +478,10 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
       }
     }
   }
+
+  if (SimActions.size() == 0)
+        LLVM_DEBUG(dbgs() << "MCO found no optimizaitons\n");
+
 
   return SimActions;
 }
@@ -632,6 +642,8 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
       }
     }
   }
+  if (SimActions.size() == 0)
+        LLVM_DEBUG(dbgs() << "DSE found no optimizaitons\n");
 
   return SimActions;
 }
