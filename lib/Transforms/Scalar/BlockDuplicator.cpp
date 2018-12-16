@@ -164,7 +164,8 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
         */
 
         // Simulate duplication
-        Simulation *S = new Simulation(&TTI, &TLI, &MD, &AA, &F, BB, BBSuccessor);
+        Simulation *S =
+            new Simulation(&TTI, &TLI, &MD, &AA, &F, BB, BBSuccessor);
         S->run();
 
         // Collect all simulations
@@ -313,8 +314,7 @@ Simulation::Simulation(const TargetTransformInfo *TTI,
   appendInstructions(Instructions, BM);
 }
 
-unsigned
-Simulation::calculateBPInstructionCost(const TargetTransformInfo *TTI) {
+unsigned Simulation::calculateBPInstructionCost() {
   unsigned Cost = 0;
   for (Instruction &I : *BP) {
     Cost +=
@@ -323,7 +323,7 @@ Simulation::calculateBPInstructionCost(const TargetTransformInfo *TTI) {
   return Cost;
 }
 
-unsigned Simulation::calculateDuplicationCost(const TargetTransformInfo *TTI) {
+unsigned Simulation::calculateDuplicationCost() {
   unsigned Cost = 0;
   for (Instruction &I : *BM) {
     if (isa<PHINode>(I))
@@ -334,7 +334,7 @@ unsigned Simulation::calculateDuplicationCost(const TargetTransformInfo *TTI) {
   return Cost;
 }
 
-unsigned Simulation::calculateBPCodeSize(const TargetTransformInfo *TTI) {
+unsigned Simulation::calculateBPCodeSize() {
   unsigned Cost = 0;
   for (Instruction &I : *BP) {
     Cost += TTI->getInstructionCost(&I, TargetTransformInfo::TCK_CodeSize);
@@ -342,8 +342,7 @@ unsigned Simulation::calculateBPCodeSize(const TargetTransformInfo *TTI) {
   return Cost;
 }
 
-unsigned
-Simulation::calculateDuplicationCodeSize(const TargetTransformInfo *TTI) {
+unsigned Simulation::calculateDuplicationCodeSize() {
   unsigned Cost = 0;
   for (Instruction &I : *BM) {
     if (isa<PHINode>(I))
@@ -377,8 +376,8 @@ int Simulation::simulationBenefit() {
   const int CodeSizeIncreaseThreshold = 3;
   int Benefit = 0;
   int Cost = 0;
-  int DuplicationCodeSize = calculateDuplicationCodeSize(TTI);
-  int CurrBlockCodeSize = calculateBPCodeSize(TTI);
+  int DuplicationCodeSize = calculateDuplicationCodeSize();
+  int CurrBlockCodeSize = calculateBPCodeSize();
   int NewBlockCodeSize = 0;
   int CodeSizeDiff = 0;
 
@@ -388,36 +387,23 @@ int Simulation::simulationBenefit() {
     CodeSizeDiff += A->getCodeSizeDiff();
   }
 
-#ifdef PRINT_COST_ANALYSIS
-  errs() << "BP:\n";
-  errs() << *BP;
-  errs() << "\n";
-  errs() << "BM:\n";
-  errs() << *BM;
-  errs() << "\n";
-
-  errs() << "Benefit: " << Benefit << '\n';
-  errs() << "Cost: " << Cost << '\n';
-#endif
+  LLVM_DEBUG(dbgs() << "BP:\n" << *BP << "\n" << "BM:\n" << *BM << "\n";);
+  LLVM_DEBUG(dbgs() << "Benefit: " << Benefit << '\n' << "Cost: " << Cost << '\n';);
 
   DuplicationCodeSize += CodeSizeDiff;
 
   NewBlockCodeSize = DuplicationCodeSize + CurrBlockCodeSize;
 
-#ifdef PRINT_COST_ANALYSIS
-  errs() << "CodeSizeDiff: " << CodeSizeDiff << '\n';
-  errs() << "CurrBLockCodeSize: " << CurrBlockCodeSize << '\n';
-  errs() << "DuplicationCodeSize: " << DuplicationCodeSize << '\n';
-  errs() << "NewBlockCodeSize: " << NewBlockCodeSize << '\n';
-#endif
+  LLVM_DEBUG(dbgs() << "CodeSizeDiff: " << CodeSizeDiff << '\n';);
+  LLVM_DEBUG(dbgs() << "CurrBLockCodeSize: " << CurrBlockCodeSize << '\n';);
+  LLVM_DEBUG(dbgs() << "DuplicationCodeSize: " << DuplicationCodeSize << '\n';);
+  LLVM_DEBUG(dbgs() << "NewBlockCodeSize: " << NewBlockCodeSize << '\n';);
 
   // If the blocks code size has increased to much
   // do not apply the simulation
   if (NewBlockCodeSize > (CurrBlockCodeSize * CodeSizeIncreaseThreshold)) {
-#ifdef PRINT_COST_ANALYSIS
-    errs() << "NewBLockSize above threshold: " << NewBlockCodeSize << '\n';
+    LLVM_DEBUG(dbgs() << "NewBLockSize above threshold: " << NewBlockCodeSize << '\n';);
     return 0;
-#endif
   }
 
   return Benefit - Cost;
@@ -700,7 +686,8 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
           NewInstIntrinsic->setLength(TrimmedLength);
           // EarlierIntrinsic->setLength(TrimmedLength);
 
-          LLVM_DEBUG(dbgs() << "Replacing (" << *EarlierWrite << "," << *NewInst << " )\n");
+          LLVM_DEBUG(dbgs() << "Replacing (" << *EarlierWrite << "," << *NewInst
+                            << " )\n");
           ReplaceAction *RA = new ReplaceAction(
               TTI,
               std::pair<Instruction *, Instruction *>(EarlierWrite, NewInst));
