@@ -23,6 +23,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+
+
+
 #include <algorithm>
 #include <unordered_set>
 #include <vector>
@@ -84,14 +87,14 @@ struct DBDuplicationSimulation : public FunctionPass {
 
     // required - need before our pass
     AU.addRequired<DominatorTreeWrapperPass>();
+    AU.addRequired<MemoryDependenceWrapperPass>();
+    AU.addRequired<AAResultsWrapperPass>();
     AU.addRequired<TargetTransformInfoWrapperPass>();
     AU.addRequired<TargetLibraryInfoWrapperPass>();
 
-    AU.addRequired<MemoryDependenceWrapperPass>();
     // AU.addPreserved<MemoryDependenceWrapperPass>(); // do we actually
     // preserve?
 
-    AU.addRequired<AAResultsWrapperPass>();
     // AU.addPreserved<GlobalsAAWrapperPass>(); // do we actually preserve?
 
     // maybe?
@@ -104,10 +107,11 @@ char DBDuplicationSimulation::ID = 0;
 INITIALIZE_PASS_BEGIN(DBDuplicationSimulation, "simulator", "Simulate optimizations and duplicate", false,
                       false)
 INITIALIZE_PASS_DEPENDENCY(DominatorTreeWrapperPass)
-INITIALIZE_PASS_DEPENDENCY(TargetTransformInfoWrapperPass)
-INITIALIZE_PASS_DEPENDENCY(TargetLibraryInfoWrapperPass)
 INITIALIZE_PASS_DEPENDENCY(MemoryDependenceWrapperPass)
 INITIALIZE_PASS_DEPENDENCY(AAResultsWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(GlobalsAAWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(TargetTransformInfoWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(TargetLibraryInfoWrapperPass)
 INITIALIZE_PASS_END(DBDuplicationSimulation, "simulator", "Simulate optimizations and duplicate", false,
                     false)
 
@@ -162,6 +166,7 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
         */
 
         // Simulate duplication
+        LLVM_DEBUG(dbgs() << "** Running simulation in function: " << F.getName() << '\n');
         Simulation *S = new Simulation(&TTI, &TLI, &MD, &AA, &F, BB, BBSuccessor);
         S->run();
 
@@ -217,7 +222,7 @@ void appendInstructions(vector<Instruction *> &Instructions, BasicBlock *BB) {
   }
 }
 
-SimulationAction::~SimulationAction() {};
+SimulationAction::~SimulationAction() {}
 
 int SimulationAction::getBenefit() {
   const int BenefitScaleFactor = 256;
@@ -416,21 +421,31 @@ bool Simulation::apply() {
   return Changed;
 }
 
-ApplicabilityCheck::~ApplicabilityCheck() {};
+ApplicabilityCheck::~ApplicabilityCheck() {}
 
 vector<SimulationAction *>
 MemCpyApplicabilityCheck::simulate(SymbolMap Map,
                                    const vector<Instruction *> Instructions) {
   vector<SimulationAction *> SimActions;
 
+  LLVM_DEBUG(dbgs() << "Block:\n");
+  for (auto II : Instructions) {
+    LLVM_DEBUG(dbgs() << *II << '\n');
+  }
+
   // Reverse iterator to only save last memcpy
   for (auto IIA = Instructions.rbegin(); IIA != Instructions.rend(); ++IIA) {
 
     Instruction *IA = *IIA;
 
+    if (!dse::hasAnalyzableMemoryWrite(IA, *TLI))
+      continue;
+
     MemCpyInst *MemCpyA;
     if (!(MemCpyA = dyn_cast<MemCpyInst>(IA)))
       continue;
+
+    LLVM_DEBUG(dbgs() << "InspectingForOpt (" << *MemCpyA << " )\n");
 
     MemoryLocation LocA = dse::getLocForWrite(MemCpyA);
 
@@ -439,8 +454,11 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
 
       Instruction *IB = *IIB;
 
-      if (!dse::hasAnalyzableMemoryWrite(IB, *TLI))
+      if (!dse::hasAnalyzableMemoryWrite(IB, *TLI)) {
+        LLVM_DEBUG(dbgs() << "NonAnalyzableMem (" << *IB << " )\n");
         continue;
+      }
+      LLVM_DEBUG(dbgs() << "AnalyzableMem (" << *IB << " )\n");
 
       // Check if an instruction, that is not a memcpy,
       // writes to MemCpyA memory location, if so we cannot
@@ -449,6 +467,7 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
         LLVM_DEBUG(dbgs() << "WritesTo (" << *IB << "," << *IA << " )\n");
         break;
       }
+      LLVM_DEBUG(dbgs() << "DoesNotWriteTo (" << *IB << "," << *IA << " )\n");
 
       MemCpyInst *MemCpyB;
       if (!(MemCpyB = dyn_cast<MemCpyInst>(IB)))
@@ -470,7 +489,7 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
 
         MemCpyI->setSource(MemCpyB->getRawSource());
 
-        LLVM_DEBUG(dbgs() << "Replacing (" << *IA << "," << *I << " )\n");
+        LLVM_DEBUG(dbgs() << "MEMCPY Replacing (" << *IA << "," << *I << " )\n");
 
         ReplaceAction *RA = new ReplaceAction(
             TTI, std::pair<Instruction *, Instruction *>(MemCpyA, MemCpyI));
@@ -572,7 +591,8 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
 
         if (OR == dse::OW_Complete) {
           // Delete the store.
-          LLVM_DEBUG(dbgs() << "Removing (" << *DepWrite << " )\n");
+          LLVM_DEBUG(dbgs() << "DSE Removing (" << *DepWrite <<
+                     " )\n\t because of: " << *IA << '\n');
           SimActions.push_back(new RemoveAction(TTI, DepWrite));
           RemovedInst.insert(DepWrite);
         } else if ((OR == dse::OW_End &&
@@ -619,12 +639,14 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
           NewInstIntrinsic->setLength(TrimmedLength);
           // EarlierIntrinsic->setLength(TrimmedLength);
 
-          LLVM_DEBUG(dbgs() << "Replacing (" << *EarlierWrite << "," << *NewInst << " )\n");
+          /*
+          LLVM_DEBUG(dbgs() << "DSE Replacing (" << *EarlierWrite << "," << *NewInst << " )\n");
           ReplaceAction *RA = new ReplaceAction(
               TTI,
               std::pair<Instruction *, Instruction *>(EarlierWrite, NewInst));
 
           SimActions.push_back(RA);
+          */
 
           EarlierSize = NewLength;
           if (!IsOverwriteEnd) {

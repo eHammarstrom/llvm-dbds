@@ -20,8 +20,7 @@ cd $PROJECT_DIR/test_programs
 for test_prog in *.c; do
     test_no_ext=${test_prog%%.*}
     $CLANG -S -O0 -Xclang -disable-O0-optnone -emit-llvm \
-	  -fno-inline-functions \
-	  $test_prog -o $TEST_DIR/$test_no_ext.ll
+	   $test_prog -o $TEST_DIR/$test_no_ext.ll
 done
 
 cd $PROJECT_DIR
@@ -74,10 +73,8 @@ else
 	echo "*********** OPTIMIZING $test_no_ext ***********"
 	echo ""
 
-	$OPT -S \
+	$OPT -S -O3 -debug-only simulator \
 	     -o $PROJECT_DIR/test_result/$test_file \
-	     -O3 -dot-dom -dot-cfg \
-	     -debug-only simulator \
 	     < $test_file #&> OUT_FILE # redirect stdin and stderr to OUT_FILE
 
 	     # -load $PROJECT_DIR/../build/lib/LLVMBlockDuplicator.so \
@@ -120,7 +117,8 @@ else
 	echo ""
 	$LLC $test_no_ext.ll
 	$CLANG $test_no_ext.s -o $test_no_ext.e
-	$CLANG -O3 $PROJECT_DIR/test_programs/$test_no_ext.c
+	# compare with system clang, without DBDS
+	clang -O3 $PROJECT_DIR/test_programs/$test_no_ext.c
 	./$test_no_ext.e < input10 > $test_no_ext.output10
 	./a.out < input10 > $test_no_ext.correct10
 	diff $test_no_ext.output10 $test_no_ext.correct10
