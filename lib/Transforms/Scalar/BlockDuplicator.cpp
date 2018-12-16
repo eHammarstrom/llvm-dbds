@@ -87,14 +87,14 @@ struct DBDuplicationSimulation : public FunctionPass {
 
     // required - need before our pass
     AU.addRequired<DominatorTreeWrapperPass>();
+    AU.addRequired<MemoryDependenceWrapperPass>();
+    AU.addRequired<AAResultsWrapperPass>();
     AU.addRequired<TargetTransformInfoWrapperPass>();
     AU.addRequired<TargetLibraryInfoWrapperPass>();
 
-    AU.addRequired<MemoryDependenceWrapperPass>();
     // AU.addPreserved<MemoryDependenceWrapperPass>(); // do we actually
     // preserve?
 
-    AU.addRequired<AAResultsWrapperPass>();
     // AU.addPreserved<GlobalsAAWrapperPass>(); // do we actually preserve?
 
     // maybe?
@@ -107,10 +107,11 @@ char DBDuplicationSimulation::ID = 0;
 INITIALIZE_PASS_BEGIN(DBDuplicationSimulation, "simulator", "Simulate optimizations and duplicate", false,
                       false)
 INITIALIZE_PASS_DEPENDENCY(DominatorTreeWrapperPass)
-INITIALIZE_PASS_DEPENDENCY(TargetTransformInfoWrapperPass)
-INITIALIZE_PASS_DEPENDENCY(TargetLibraryInfoWrapperPass)
 INITIALIZE_PASS_DEPENDENCY(MemoryDependenceWrapperPass)
 INITIALIZE_PASS_DEPENDENCY(AAResultsWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(GlobalsAAWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(TargetTransformInfoWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(TargetLibraryInfoWrapperPass)
 INITIALIZE_PASS_END(DBDuplicationSimulation, "simulator", "Simulate optimizations and duplicate", false,
                     false)
 
@@ -165,6 +166,7 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
         */
 
         // Simulate duplication
+        LLVM_DEBUG(dbgs() << "** Running simulation in function: " << F.getName() << '\n');
         Simulation *S = new Simulation(&TTI, &TLI, &MD, &AA, &F, BB, BBSuccessor);
         S->run();
 
@@ -418,14 +420,24 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
                                    const vector<Instruction *> Instructions) {
   vector<SimulationAction *> SimActions;
 
+  LLVM_DEBUG(dbgs() << "Block:\n");
+  for (auto II : Instructions) {
+    LLVM_DEBUG(dbgs() << *II << '\n');
+  }
+
   // Reverse iterator to only save last memcpy
   for (auto IIA = Instructions.rbegin(); IIA != Instructions.rend(); ++IIA) {
 
     Instruction *IA = *IIA;
 
+    if (!dse::hasAnalyzableMemoryWrite(IA, *TLI))
+      continue;
+
     MemCpyInst *MemCpyA;
     if (!(MemCpyA = dyn_cast<MemCpyInst>(IA)))
       continue;
+
+    LLVM_DEBUG(dbgs() << "InspectingForOpt (" << *MemCpyA << " )\n");
 
     MemoryLocation LocA = dse::getLocForWrite(MemCpyA);
 
@@ -434,8 +446,11 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
 
       Instruction *IB = *IIB;
 
-      if (!dse::hasAnalyzableMemoryWrite(IB, *TLI))
+      if (!dse::hasAnalyzableMemoryWrite(IB, *TLI)) {
+        LLVM_DEBUG(dbgs() << "NonAnalyzableMem (" << *IB << " )\n");
         continue;
+      }
+      LLVM_DEBUG(dbgs() << "AnalyzableMem (" << *IB << " )\n");
 
       // Check if an instruction, that is not a memcpy,
       // writes to MemCpyA memory location, if so we cannot
@@ -444,6 +459,7 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
         LLVM_DEBUG(dbgs() << "WritesTo (" << *IB << "," << *IA << " )\n");
         break;
       }
+      LLVM_DEBUG(dbgs() << "DoesNotWriteTo (" << *IB << "," << *IA << " )\n");
 
       MemCpyInst *MemCpyB;
       if (!(MemCpyB = dyn_cast<MemCpyInst>(IB)))
