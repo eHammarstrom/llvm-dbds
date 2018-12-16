@@ -179,13 +179,13 @@ private:
   // into its optimized equivalent.
   vector<SimulationAction *> Actions;
   // Calculate the cost for the instructions in BP
-  unsigned calculateBPInstructionCost(const TargetTransformInfo *TTI);
+  unsigned calculateBPInstructionCost();
   // Calculate the cost of duplicating
-  unsigned calculateDuplicationCost(const TargetTransformInfo *TTI);
+  unsigned calculateDuplicationCost();
   // Calculate the CodeSize for the instructions in BP
-  unsigned calculateBPCodeSize(const TargetTransformInfo *TTI);
+  unsigned calculateBPCodeSize();
   // Calculate the CodeSize for duplicating
-  unsigned calculateDuplicationCodeSize(const TargetTransformInfo *TTI);
+  unsigned calculateDuplicationCodeSize();
 };
 
 } // namespace blockduplicator
