@@ -23,6 +23,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+
+
+
 #include <algorithm>
 #include <unordered_set>
 #include <vector>
@@ -111,10 +114,8 @@ INITIALIZE_PASS_DEPENDENCY(AAResultsWrapperPass)
 INITIALIZE_PASS_END(DBDuplicationSimulation, "simulator", "Simulate optimizations and duplicate", false,
                     false)
 
-/*
 static RegisterPass<DBDuplicationSimulation> X("simulator",
                                                "Duplication Simulator Pass");
-*/
 
 // Public interface to the Duplication Simulation Pass.
 FunctionPass* llvm::createDuplicationSimulationPass() {
@@ -215,7 +216,7 @@ void appendInstructions(vector<Instruction *> &Instructions, BasicBlock *BB) {
   }
 }
 
-SimulationAction::~SimulationAction() {};
+SimulationAction::~SimulationAction() {}
 
 int SimulationAction::getBenefit() {
   const int BenefitScaleFactor = 256;
@@ -410,7 +411,7 @@ bool Simulation::apply() {
   return Changed;
 }
 
-ApplicabilityCheck::~ApplicabilityCheck() {};
+ApplicabilityCheck::~ApplicabilityCheck() {}
 
 vector<SimulationAction *>
 MemCpyApplicabilityCheck::simulate(SymbolMap Map,
@@ -464,7 +465,7 @@ MemCpyApplicabilityCheck::simulate(SymbolMap Map,
 
         MemCpyI->setSource(MemCpyB->getRawSource());
 
-        LLVM_DEBUG(dbgs() << "Replacing (" << *IA << "," << *I << " )\n");
+        LLVM_DEBUG(dbgs() << "MEMCPY Replacing (" << *IA << "," << *I << " )\n");
 
         ReplaceAction *RA = new ReplaceAction(
             TTI, std::pair<Instruction *, Instruction *>(MemCpyA, MemCpyI));
@@ -562,7 +563,8 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
 
         if (OR == dse::OW_Complete) {
           // Delete the store.
-          LLVM_DEBUG(dbgs() << "Removing (" << *DepWrite << " )\n");
+          LLVM_DEBUG(dbgs() << "DSE Removing (" << *DepWrite <<
+                     " )\n\t because of: " << *IA << '\n');
           SimActions.push_back(new RemoveAction(TTI, DepWrite));
           RemovedInst.insert(DepWrite);
         } else if ((OR == dse::OW_End &&
@@ -609,12 +611,14 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
           NewInstIntrinsic->setLength(TrimmedLength);
           // EarlierIntrinsic->setLength(TrimmedLength);
 
-          LLVM_DEBUG(dbgs() << "Replacing (" << *EarlierWrite << "," << *NewInst << " )\n");
+          /*
+          LLVM_DEBUG(dbgs() << "DSE Replacing (" << *EarlierWrite << "," << *NewInst << " )\n");
           ReplaceAction *RA = new ReplaceAction(
               TTI,
               std::pair<Instruction *, Instruction *>(EarlierWrite, NewInst));
 
           SimActions.push_back(RA);
+          */
 
           EarlierSize = NewLength;
           if (!IsOverwriteEnd) {
