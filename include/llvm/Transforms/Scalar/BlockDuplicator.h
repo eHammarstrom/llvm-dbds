@@ -88,9 +88,9 @@ class ApplicabilityCheck {
 public:
   virtual ~ApplicabilityCheck() = 0;
   ApplicabilityCheck(const TargetTransformInfo *TTI,
-                     const TargetLibraryInfo *TLI, MemoryDependenceResults *MD,
-                     AliasAnalysis *AA, Module *Mod, Function *F)
-      : TTI(TTI), TLI(TLI), MD(MD), AA(AA), Mod(Mod), F(F) {}
+                     const TargetLibraryInfo *TLI, const DataLayout *DL, MemoryDependenceResults *MD,
+                     AliasAnalysis *AA, Function *F)
+      : TTI(TTI), TLI(TLI), MD(MD), AA(AA), DL(DL), F(F) {}
   // Returns the actions that should be taken to apply an optimization
   virtual vector<SimulationAction *> simulate(const SymbolMap,
                                               const vector<Instruction *>) = 0;
@@ -100,7 +100,7 @@ protected:
   const TargetLibraryInfo *TLI;
   MemoryDependenceResults *MD;
   AliasAnalysis *AA;
-  Module *Mod;
+  const DataLayout *DL;
   Function *F;
 };
 
@@ -139,6 +139,7 @@ public:
   }
 
   Simulation(const TargetTransformInfo *TTI, const TargetLibraryInfo *TLI,
+             const DataLayout *DL,
              MemoryDependenceResults *MD, AliasAnalysis *AA, Function *F,
              BasicBlock *bp, BasicBlock *bm);
   void run();

@@ -135,6 +135,10 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
   auto &MD = getAnalysis<MemoryDependenceWrapperPass>().getMemDep();
   auto &AA = getAnalysis<AAResultsWrapperPass>().getAAResults();
 
+  // get module datalayout for dse
+  Module *Mod = F.getParent();
+  const DataLayout &DL = Mod->getDataLayout();
+
   vector<DomTreeNodeBase<BasicBlock> *> WorkList;
   WorkList.push_back(DT.getRootNode());
 
@@ -166,7 +170,7 @@ bool DBDuplicationSimulation::runOnFunction(Function &F) {
 
         // Simulate duplication
         LLVM_DEBUG(dbgs() << "** Running simulation in function: " << F.getName() << '\n');
-        Simulation *S = new Simulation(&TTI, &TLI, &MD, &AA, &F, BB, BBSuccessor);
+        Simulation *S = new Simulation(&TTI, &TLI, &DL, &MD, &AA, &F, BB, BBSuccessor);
         S->run();
 
         // Collect all simulations
@@ -253,10 +257,12 @@ RemoveAction::RemoveAction(const TargetTransformInfo *TTI, Instruction *I)
     : ActionInst(I) {
   // TODO: calculate benefit/cost
   // in this case it is only a benefit
+  /*
   unsigned InstCost =
       TTI->getInstructionCost(I, TargetTransformInfo::TCK_RecipThroughput);
   Benefit += InstCost;
   CodeSizeDiff -= TTI->getInstructionCost(I, TargetTransformInfo::TCK_CodeSize);
+  */
 }
 
 bool RemoveAction::apply(BasicBlock *NewBlock, InstructionMap IMap) {
@@ -297,13 +303,13 @@ bool ReplaceAction::apply(BasicBlock *NewBlock, InstructionMap IMap) {
 
 Simulation::Simulation(const TargetTransformInfo *TTI,
                        const TargetLibraryInfo *TLI,
+                       const DataLayout *DL,
                        MemoryDependenceResults *MD, AliasAnalysis *AA,
                        Function *F, BasicBlock *bp, BasicBlock *bm)
     : TTI(TTI), BP(bp), BM(bm) {
-  Module *Mod = BP->getModule();
 
-  AC.push_back(new MemCpyApplicabilityCheck(TTI, TLI, MD, AA, Mod, F));
-  AC.push_back(new DeadStoreApplicabilityCheck(TTI, TLI, MD, AA, Mod, F));
+  AC.push_back(new MemCpyApplicabilityCheck(TTI, TLI, DL, MD, AA, F));
+  AC.push_back(new DeadStoreApplicabilityCheck(TTI, TLI, DL, MD, AA, F));
 
   for (BasicBlock::iterator I = BM->begin(); isa<PHINode>(I); ++I) {
     PHINode *PN = cast<PHINode>(I);
@@ -414,10 +420,12 @@ int Simulation::simulationBenefit() {
 
   // If the blocks code size has increased to much
   // do not apply the simulation
+  /*
   if (NewBlockCodeSize > (CurrBlockCodeSize * CodeSizeIncreaseThreshold)) {
     LLVM_DEBUG(dbgs() << "NewBLockSize above threshold: " << NewBlockCodeSize << '\n';);
     return 0;
   }
+  */
 
   return Benefit - Cost;
 }
@@ -598,7 +606,6 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
   unordered_set<Instruction *> RemovedInst;
 
   // Mod is the current compilation module
-  const DataLayout &DL = Mod->getDataLayout();
 
   // A map of interval maps representing partially-overwritten value parts.
   dse::InstOverlapIntervalsTy IOL;
@@ -664,8 +671,9 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
 
         int64_t InstWriteOffset, DepWriteOffset;
 
+
         dse::OverwriteResult OR =
-            dse::isOverwrite(Loc, DepLoc, DL, *TLI, DepWriteOffset,
+            dse::isOverwrite(Loc, DepLoc, *DL, *TLI, DepWriteOffset,
                              InstWriteOffset, DepWrite, IOL, *AA, F);
 
         if (OR == dse::OW_Complete) {
@@ -674,7 +682,7 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
                      " )\n\t because of: " << *IA << '\n');
           SimActions.push_back(new RemoveAction(TTI, DepWrite));
           RemovedInst.insert(DepWrite);
-        } else if ((OR == dse::OW_End &&
+        } /*else if ((OR == dse::OW_End &&
                     dse::isShortenableAtTheEnd(DepWrite)) ||
                    ((OR == dse::OW_Begin &&
                      dse::isShortenableAtTheBeginning(DepWrite)))) {
@@ -718,15 +726,12 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
           NewInstIntrinsic->setLength(TrimmedLength);
           // EarlierIntrinsic->setLength(TrimmedLength);
 
-          /*
           LLVM_DEBUG(dbgs() << "DSE Replacing (" << *EarlierWrite << "," << *NewInst << " )\n");
->>>>>>> dbds
           ReplaceAction *RA = new ReplaceAction(
               TTI,
               std::pair<Instruction *, Instruction *>(EarlierWrite, NewInst));
 
           SimActions.push_back(RA);
-          */
 
           EarlierSize = NewLength;
           if (!IsOverwriteEnd) {
@@ -739,8 +744,9 @@ DeadStoreApplicabilityCheck::simulate(SymbolMap Map,
             NewInstIntrinsic->setDest(NewDestGEP);
             // EarlierIntrinsic->setDest(NewDestGEP);
             EarlierOffset = EarlierOffset + OffsetMoved;
-          }
+            }
         }
+          */
       }
     }
   }
